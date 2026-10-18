@@ -49,8 +49,6 @@ npm run check          # 以上五项串联
 
 ## 接口契约
 
-以 `P0-FB01-fullstack-collaboration-guide.md` 第 4 节为准：
-
 - `GET /api/health`
 - `POST /api/v1/sql/generate/stream`（`start` / `delta` / `complete` / `error`）
 - `POST /api/v1/sql/execute`（`columns` / `rows` / `rowCount` / `truncated`）
@@ -69,8 +67,6 @@ src/
 ├── pages/                # 页面组合
 └── types/
 ```
-
-结构决策见 `docs/structure-decision.md`，联调结果见 `docs/P0-FB01-acceptance.md`。
 
 ## 已知限制
 
