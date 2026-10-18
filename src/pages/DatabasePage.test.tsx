@@ -1,59 +1,175 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DatabasePage } from './DatabasePage';
+import {
+  createConnection,
+  deleteConnection,
+  fetchConnectionSchema,
+  listConnections,
+  testConnection,
+  updateConnection,
+} from '../api/connections';
+import type * as ConnectionsModule from '../api/connections';
+import type { Connection, SchemaResponse } from '../api/contract';
 
-/** AC-12 / AC-13 / AC-14：列表与详情同步、保存有真实结果、不伪造连接成功。 */
-describe('DatabasePage 演示连接', () => {
-  it('TC-08 选择其它连接时表单内容同步变化', async () => {
-    const user = userEvent.setup();
-    render(<DatabasePage />);
+vi.mock('../api/connections', async () => {
+  const actual = await vi.importActual<typeof ConnectionsModule>('../api/connections');
+  return {
+    ...actual,
+    listConnections: vi.fn(),
+    fetchConnectionSchema: vi.fn(),
+    createConnection: vi.fn(),
+    updateConnection: vi.fn(),
+    deleteConnection: vi.fn(),
+    testConnection: vi.fn(),
+  };
+});
 
-    expect(screen.getByLabelText('连接名称')).toHaveValue('示例商店业务库');
-    expect(screen.getByLabelText('主机')).toHaveValue('demo-db.internal');
+const listMock = vi.mocked(listConnections);
+const schemaMock = vi.mocked(fetchConnectionSchema);
+const updateMock = vi.mocked(updateConnection);
+const createMock = vi.mocked(createConnection);
+const deleteMock = vi.mocked(deleteConnection);
+const testMock = vi.mocked(testConnection);
 
-    await user.click(screen.getByRole('button', { name: /示例数据仓库/ }));
+const CONNECTION_A: Connection = {
+  id: 1,
+  name: 'A 商店库',
+  engine: 'mysql',
+  host: '127.0.0.1',
+  port: 3306,
+  database: 'sql_demo_a',
+  username: 'demo_a_reader',
+  hasPassword: true,
+};
 
-    expect(screen.getByLabelText('连接名称')).toHaveValue('示例数据仓库');
-    expect(screen.getByLabelText('主机')).toHaveValue('demo-warehouse.internal');
-    expect(screen.getByLabelText('端口')).toHaveValue(5432);
-    expect(screen.getByLabelText('引擎类型')).toHaveValue('postgresql');
+const CONNECTION_B: Connection = {
+  ...CONNECTION_A,
+  id: 2,
+  name: 'B 博客库',
+  database: 'sql_demo_b',
+  username: 'demo_b_reader',
+};
+
+const SCHEMA_A: SchemaResponse = {
+  database: 'sql_demo_a',
+  tables: [
+    {
+      name: 'shop_orders',
+      columns: [{ name: 'amount', type: 'DECIMAL', nullable: false }],
+    },
+  ],
+};
+
+const SCHEMA_B: SchemaResponse = {
+  database: 'sql_demo_b',
+  tables: [
+    {
+      name: 'blog_posts',
+      columns: [{ name: 'views', type: 'INT', nullable: false }],
+    },
+  ],
+};
+
+async function renderPage(connections: Connection[] = [CONNECTION_A, CONNECTION_B]) {
+  listMock.mockResolvedValue(connections);
+  schemaMock.mockImplementation(async (id) => (id === 1 ? SCHEMA_A : SCHEMA_B));
+  const user = userEvent.setup();
+  render(<DatabasePage />);
+  await screen.findByRole('button', { name: /A 商店库/ });
+  await screen.findByLabelText('连接名称');
+  return user;
+}
+
+describe('DatabasePage 真实连接管理', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('TC-13 保存修改会真实更新演示列表并给出反馈', async () => {
-    const user = userEvent.setup();
-    render(<DatabasePage />);
+  it('选择连接时表单与真实表结构同步切换', async () => {
+    const user = await renderPage();
+
+    expect(screen.getByLabelText('连接名称')).toHaveValue('A 商店库');
+    expect(await screen.findByText('shop_orders')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /B 博客库/ }));
+
+    expect(screen.getByLabelText('连接名称')).toHaveValue('B 博客库');
+    expect(await screen.findByText('blog_posts')).toBeInTheDocument();
+    expect(screen.queryByText('shop_orders')).not.toBeInTheDocument();
+  });
+
+  it('保存修改调用 PATCH 并更新列表', async () => {
+    const user = await renderPage();
+    updateMock.mockResolvedValue({ ...CONNECTION_A, name: 'A 商店库（改）' });
 
     const nameInput = screen.getByLabelText('连接名称');
-    await user.clear(nameInput);
-    await user.type(nameInput, '重命名后的演示库');
-    await user.click(screen.getByRole('button', { name: /保存演示数据/ }));
+    await user.type(nameInput, '（改）');
+    expect(nameInput).toHaveValue('A 商店库（改）');
+    await user.click(screen.getByRole('button', { name: '保存' }));
 
-    expect(screen.getByRole('button', { name: /重命名后的演示库/ })).toBeInTheDocument();
-    expect(screen.getByText(/已更新「重命名后的演示库」的演示数据/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /保存演示数据/ })).toBeDisabled();
+    expect(updateMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ name: 'A 商店库（改）', database: 'sql_demo_a' }),
+    );
+    expect(await screen.findByRole('button', { name: /A 商店库（改）/ })).toBeInTheDocument();
   });
 
-  it('TC-09 测试连接不伪装成真实数据库成功', async () => {
-    const user = userEvent.setup();
-    render(<DatabasePage />);
+  it('测试连接展示服务端真实结果', async () => {
+    const user = await renderPage();
+    testMock.mockResolvedValue({ success: true, message: '连接成功', latencyMs: 12 });
 
     await user.click(screen.getByRole('button', { name: '测试连接' }));
 
-    expect(screen.getByText(/尚未接入数据库，未执行任何真实连接检测/)).toBeInTheDocument();
-    expect(screen.queryByText(/连接成功|连通|握手成功|12ms/i)).toBeNull();
+    expect(await screen.findByText(/连接成功（12ms）/)).toBeInTheDocument();
+    expect(testMock).toHaveBeenCalledWith(1);
   });
 
-  it('新增与移除只影响内存中的演示列表', async () => {
-    const user = userEvent.setup();
-    render(<DatabasePage />);
-    const list = screen.getByRole('region', { name: '演示连接列表' });
+  it('测试失败如实展示，不伪装成功', async () => {
+    const user = await renderPage();
+    testMock.mockResolvedValue({ success: false, message: '连接失败，请检查主机、端口、账号与密码', latencyMs: 30 });
 
-    await user.click(screen.getByRole('button', { name: /新增演示连接/ }));
-    expect(within(list).getByRole('button', { name: /新演示连接/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '测试连接' }));
 
-    await user.click(screen.getByRole('button', { name: /移除该演示连接/ }));
-    expect(within(list).queryByRole('button', { name: /新演示连接/ })).toBeNull();
-    expect(screen.getByText(/已从演示列表移除/)).toBeInTheDocument();
+    expect(await screen.findByText(/连接失败，请检查主机、端口、账号与密码/)).toBeInTheDocument();
+  });
+
+  it('新增连接必须填写密码并调用 POST', async () => {
+    const user = await renderPage();
+    createMock.mockResolvedValue({
+      id: 3,
+      name: '新库',
+      engine: 'mysql',
+      host: '127.0.0.1',
+      port: 3306,
+      database: 'sql_demo_a',
+      username: 'demo_a_reader',
+      hasPassword: true,
+    });
+    schemaMock.mockResolvedValue(SCHEMA_A);
+
+    await user.click(screen.getByRole('button', { name: /新增/ }));
+    await user.type(screen.getByLabelText('连接名称'), '新库');
+    await user.type(screen.getByLabelText('数据库'), 'sql_demo_a');
+    await user.type(screen.getByLabelText('用户名'), 'demo_a_reader');
+    await user.type(screen.getByLabelText('密码'), 'DemoA_reader_2026!');
+    await user.click(screen.getByRole('button', { name: '保存' }));
+
+    expect(createMock).toHaveBeenCalledWith(
+      expect.objectContaining({ name: '新库', engine: 'mysql', password: 'DemoA_reader_2026!' }),
+    );
+    expect(await screen.findByRole('button', { name: /新库/ })).toBeInTheDocument();
+  });
+
+  it('删除连接需要确认并调用 DELETE', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const user = await renderPage();
+    deleteMock.mockResolvedValue(undefined);
+
+    await user.click(screen.getByRole('button', { name: '删除' }));
+
+    expect(deleteMock).toHaveBeenCalledWith(1);
+    expect(await screen.findByText(/已删除连接「A 商店库」/)).toBeInTheDocument();
   });
 });

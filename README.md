@@ -1,23 +1,24 @@
-# QueryForge 前端（SQL 工作台）
+# QueryForge 前端（真实用户与多数据源 SQL 工作台）
 
-React 18 + TypeScript + Vite 6 + Tailwind CSS 4。当前阶段完成 C0–C4 的最小 SQL 工作台闭环。
+React 18 + TypeScript + Vite 6 + Tailwind CSS 4。完成 P2 C5–C9：真实身份、MySQL 连接管理、Schema 浏览、按数据源生成与执行 SQL。
 
 ## 已实现
 
 | 区域 | 状态 |
 | --- | --- |
-| 工作台 Dashboard | 真实：SSE 流式生成 SQL、显式执行、真实结果表、取消/重试/错误态 |
-| 后端连接状态 | 真实：周期探测 `GET /api/health`，停服显示“后端未连接” |
-| 登录 | 演示会话：仅前端状态，不具备鉴权含义 |
-| 数据库连接 | 演示数据：本地内存编辑，不连接真实数据源 |
-| 历史记录 | 演示数据：搜索/详情/删除均为前端状态 |
-| 设置 | 真实本地偏好：主题、SQL 字号、恢复默认，写入 `localStorage` |
+| 注册/登录/退出/会话恢复 | 真实：服务端 Session + HttpOnly Cookie + CSRF |
+| 数据库连接管理 | 真实：CRUD、连通性测试、密码加密保存、归属隔离 |
+| Schema 浏览 | 真实：JDBC 元数据读取表/列/类型，可刷新 |
+| Dashboard | 真实：选择数据源、按连接生成 SQL、显式执行、真实结果表 |
+| 切换数据源 | 取消旧 SSE、清空旧 SQL/结果，生成与执行共用 connectionId |
+| 历史记录 | 演示数据（页面明确标注） |
+| 设置 | 本地主题与 SQL 字号 |
 
 ## 环境要求
 
 - Node.js 20+（验证使用 22.22.2）
-- 后端默认运行在 `http://127.0.0.1:8080`
-- 开发代理：`/api → http://127.0.0.1:8080`
+- 后端默认 `http://127.0.0.1:8080`
+- Vite 代理：`/api → http://127.0.0.1:8080`
 
 ## 启动
 
@@ -26,50 +27,60 @@ npm install
 npm run dev
 ```
 
-默认端口 5173。本机 5173 被其他项目占用时：
+5173 被占用时：
 
 ```bash
 npm run dev -- --port 5174 --strictPort
 ```
 
-打开 `http://127.0.0.1:5174/`，使用任意合法邮箱 + 任意非空密码进入演示工作台（例如 `demo@queryforge.local` / `demo-password`）。
+打开 `http://127.0.0.1:5174/`，先注册账号，再到「数据库连接」创建 MySQL 数据源。
 
 ## 质量检查
 
 ```bash
-npm run format:check   # Prettier
-npm run lint           # ESLint 9
-npm run typecheck      # tsc -b (strict)
-npm test               # Vitest + Testing Library
-npm run build          # 生产构建
-npm run check          # 以上五项串联
+npm run format:check
+npm run lint
+npm run typecheck
+npm test
+npm run build
+npm run check   # 五项串联
 ```
 
-当前基线：9 个测试文件、40 个用例通过，Lint 0 error / 0 warning。
+当前基线：9 个测试文件、46 个用例，lint 0 error / 0 warning。
 
-## 接口契约
+## 接口
 
-- `GET /api/health`
-- `POST /api/v1/sql/generate/stream`（`start` / `delta` / `complete` / `error`）
-- `POST /api/v1/sql/execute`（`columns` / `rows` / `rowCount` / `truncated`）
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/v1/auth/register` | 注册 |
+| POST | `/api/v1/auth/login` | 登录，建立 Session |
+| GET | `/api/v1/auth/me` | 当前用户 |
+| POST | `/api/v1/auth/logout` | 退出 |
+| GET | `/api/v1/auth/csrf` | CSRF Token |
+| GET/POST | `/api/v1/connections` | 列表/新增 |
+| PATCH/DELETE | `/api/v1/connections/{id}` | 修改/删除 |
+| POST | `/api/v1/connections/{id}/test` | 真实连接测试 |
+| GET | `/api/v1/connections/{id}/schema` | 真实表结构 |
+| POST | `/api/v1/sql/generate/stream` | SSE：`{userInput,connectionId,strategyName}` |
+| POST | `/api/v1/sql/execute` | 只读执行：`{connectionId,sql}` |
 
-前端不直接连接数据库，不接收/保存数据库凭据或模型密钥。
+错误体统一 `{code,message,requestId}`；前端按 `code` 展示文案。
 
 ## 目录
 
 ```text
 src/
-├── api/                  # 契约类型、fetch 客户端、SSE 解析
-├── components/           # 布局与通用 UI
-├── features/sql-workspace/  # 工作台状态机与三个展示区块
-├── hooks/                # 后端健康、会话、偏好、复制
-├── mocks/                # 明确标注的演示数据
-├── pages/                # 页面组合
-└── types/
+├── api/                      # 契约、CSRF/Session 客户端、SSE 解析
+├── features/sql-workspace/   # 工作台状态机与展示
+├── features/connections/     # 连接列表/表单/Schema
+├── hooks/                    # useAuth、健康检查、偏好
+├── pages/                    # 五个页面组合
+└── mocks/                    # 仅 History 演示数据
 ```
 
 ## 已知限制
 
-- 无真实模型凭据时，生成接口返回 `MODEL_NOT_CONFIGURED`；界面会提示但不会伪造 SQL。
-- 登录、数据库连接、历史记录尚未接入后端。
-- 未引入 React Router / 全局状态库 / UI 组件库；当前规模不需要。
+- 仅支持 MySQL 连接；PostgreSQL 明确标注暂不支持。
+- 历史记录仍为演示数据。
+- 真实模型未验证（无 Key）；无 Key 时生成接口返回 `MODEL_NOT_CONFIGURED`。
+- Session 存服务端内存，后端重启需重新登录；连接配置已持久化。

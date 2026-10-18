@@ -1,9 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Eraser, Loader2, Send, Sparkles, Square } from 'lucide-react';
 import type { ChatMessage } from '../../types';
-import { DemoBadge } from '../../components/ui/DemoBadge';
 
-const QUICK_PROMPTS = ['统计每个月的订单金额', '统计订单数量', '按城市统计客户数'];
+const QUICK_PROMPTS = ['统计记录数量', '按时间统计趋势', '查看前 10 条记录'];
 
 interface ChatPanelProps {
   messages: ChatMessage[];
@@ -42,7 +41,9 @@ export function ChatPanel({
       <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-2.5">
         <h2 className="text-sm font-semibold text-ink">提问</h2>
         <div className="flex items-center gap-2">
-          <DemoBadge variant="neutral">演示 Schema</DemoBadge>
+          <span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success">
+            真实 Schema
+          </span>
           <button type="button" className="btn-muted px-2 py-1 text-xs" onClick={onClear}>
             <Eraser className="h-3.5 w-3.5" aria-hidden="true" />
             清空
@@ -112,7 +113,7 @@ export function ChatPanel({
         <textarea
           id="dashboard-input"
           className="input-field h-20 resize-none"
-          placeholder="输入问题，例如：统计每个月的订单金额"
+          placeholder="输入问题，例如：统计记录数量"
           value={input}
           onChange={(event) => onInputChange(event.target.value)}
           onKeyDown={(event) => {

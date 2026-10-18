@@ -40,4 +40,6 @@ P0-FB01-fullstack-collaboration-guide.md
 QUALITY-GATES.md
 docs/structure-decision.md
 docs/P0-FB01-acceptance.md
+docs/*-acceptance.md
+docs/*-development-guide*.md
 docs/evidence/

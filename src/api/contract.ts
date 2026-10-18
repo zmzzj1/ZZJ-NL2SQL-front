@@ -1,10 +1,15 @@
 /**
  * 前后端共享契约的 TypeScript 映射，字段名与
- * frontend/docs/P0-FB01-fullstack-collaboration-guide.md 第 4 节逐字一致。
+ * frontend/docs/P2-FB02-fullstack-development-guide.md 第 4 节一致。
  */
 
 export type ErrorCode =
   | 'VALIDATION_ERROR'
+  | 'UNAUTHENTICATED'
+  | 'FORBIDDEN'
+  | 'DUPLICATE_EMAIL'
+  | 'CONNECTION_NOT_FOUND'
+  | 'CONNECTION_FAILED'
   | 'SQL_NOT_ALLOWED'
   | 'SQL_EXECUTION_ERROR'
   | 'MODEL_NOT_CONFIGURED'
@@ -18,9 +23,77 @@ export interface HealthResponse {
   status: 'UP';
 }
 
+export interface User {
+  id: number;
+  email: string;
+  displayName: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  displayName: string;
+  password: string;
+}
+
+export interface CsrfResponse {
+  token: string;
+  headerName: string;
+}
+
+export type ConnectionEngine = 'mysql';
+
+export interface Connection {
+  id: number;
+  name: string;
+  engine: ConnectionEngine;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  hasPassword: boolean;
+}
+
+export interface ConnectionInput {
+  name: string;
+  engine: ConnectionEngine;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  /** 修改时留空表示沿用原密码。 */
+  password?: string;
+}
+
+export interface ConnectionTestResult {
+  success: boolean;
+  message: string;
+  latencyMs: number;
+}
+
+export interface SchemaColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+}
+
+export interface SchemaTable {
+  name: string;
+  columns: SchemaColumn[];
+}
+
+export interface SchemaResponse {
+  database: string;
+  tables: SchemaTable[];
+}
+
 export interface GenerateSqlRequest {
   userInput: string;
-  schemaContext: string;
+  connectionId: number;
   strategyName: 'default';
 }
 

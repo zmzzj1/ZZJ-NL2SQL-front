@@ -43,7 +43,7 @@ export function Sidebar({ current, onNavigate, open }: SidebarProps) {
           );
         })}
         <div className="mt-auto rounded-lg border border-line bg-panel-muted p-3 text-[11px] leading-relaxed text-ink-muted">
-          工作台已接入后端 SQL 生成与只读执行；数据库连接页、历史页仍为演示数据。
+          身份、MySQL 连接与 SQL 执行已接入后端；历史记录仍为演示数据。
         </div>
       </nav>
     </aside>

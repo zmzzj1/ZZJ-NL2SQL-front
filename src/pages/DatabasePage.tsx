@@ -1,302 +1,190 @@
-import { useMemo, useState } from 'react';
-import { Info, Plus, RotateCcw, Save, Trash2 } from 'lucide-react';
-import { createEmptyConnectionDraft, mockConnections } from '../mocks/connections';
-import type { ConnectionDraft, ConnectionEngine, ConnectionEntry } from '../types';
-import { DemoBadge } from '../components/ui/DemoBadge';
-import { EmptyState } from '../components/ui/EmptyState';
+import { useCallback, useEffect, useState } from 'react';
+import { Database } from 'lucide-react';
+import { fetchConnectionSchema } from '../api/connections';
+import { describeError } from '../api/http';
+import type { Connection, ConnectionInput, ConnectionTestResult, SchemaResponse } from '../api/contract';
+import { ConnectionForm } from '../features/connections/ConnectionForm';
+import { ConnectionList } from '../features/connections/ConnectionList';
+import { SchemaPanel } from '../features/connections/SchemaPanel';
+import { useConnections } from '../features/connections/useConnections';
 
-const STATUS_LABEL: Record<ConnectionEntry['demoStatus'], string> = {
-  'sample-active': '示例 · 活跃',
-  'sample-idle': '示例 · 空闲',
-};
-
-interface ActionFeedback {
-  tone: 'info' | 'success';
+interface Feedback {
+  tone: 'success' | 'error' | 'info';
   message: string;
 }
 
-function sameDraft(a: ConnectionDraft, b: ConnectionDraft): boolean {
-  return (
-    a.name === b.name &&
-    a.engine === b.engine &&
-    a.host === b.host &&
-    a.port === b.port &&
-    a.username === b.username &&
-    a.database === b.database
-  );
-}
-
 /**
- * Database 页：演示连接列表 + 可编辑详情。
- * 所有修改只存在于内存中的演示列表，刷新页面后回到初始 Mock 数据。
+ * 数据源页：真实 CRUD、真实连通性测试与 JDBC 元数据表结构。
+ * 所有操作都依赖当前登录用户，前端不传 userId。
  */
 export function DatabasePage() {
-  const [connections, setConnections] = useState<ConnectionEntry[]>(mockConnections);
-  const [selectedId, setSelectedId] = useState(mockConnections[0].id);
-  const [drafts, setDrafts] = useState<Record<string, ConnectionDraft>>({});
-  const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
+  const { connections, loading, error, reload, create, update, remove, test } = useConnections();
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
+  const [schema, setSchema] = useState<SchemaResponse | null>(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  const [schemaError, setSchemaError] = useState('');
 
-  const selected = useMemo(
-    () => connections.find((connection) => connection.id === selectedId),
-    [connections, selectedId],
-  );
+  const selected = connections.find((item) => item.id === selectedId) ?? null;
 
-  if (!selected) {
-    return (
-      <div className="space-y-4">
-        <EmptyState
-          title="演示连接列表为空"
-          description="刚才的操作移除或清空了内存中的演示连接，可以恢复初始演示数据继续查看。"
-        >
-          <button type="button" className="btn-secondary mt-2" onClick={() => setConnections(mockConnections)}>
-            恢复演示数据
-          </button>
-        </EmptyState>
-      </div>
-    );
-  }
+  useEffect(() => {
+    if (creating) return;
+    if (connections.length === 0) {
+      setSelectedId(null);
+      return;
+    }
+    if (!selectedId || !connections.some((item) => item.id === selectedId)) {
+      setSelectedId(connections[0].id);
+    }
+  }, [connections, creating, selectedId]);
 
-  const draft = drafts[selected.id] ?? selected.draft;
-  const dirty = !sameDraft(draft, selected.draft);
+  const loadSchema = useCallback(async (id: number) => {
+    setSchemaLoading(true);
+    setSchemaError('');
+    try {
+      setSchema(await fetchConnectionSchema(id));
+    } catch (loadError) {
+      setSchema(null);
+      setSchemaError(describeError(loadError));
+    } finally {
+      setSchemaLoading(false);
+    }
+  }, []);
 
-  const updateDraft = <K extends keyof ConnectionDraft>(key: K, value: ConnectionDraft[K]) => {
-    setDrafts((current) => ({ ...current, [selected.id]: { ...draft, [key]: value } }));
+  useEffect(() => {
+    if (!selected) {
+      setSchema(null);
+      setSchemaError('');
+      return;
+    }
+    void loadSchema(selected.id);
+  }, [loadSchema, selected]);
+
+  const startCreate = () => {
+    setCreating(true);
+    setSelectedId(null);
     setFeedback(null);
+    setTestResult(null);
+    setSchema(null);
+    setSchemaError('');
   };
 
-  const saveDraft = () => {
-    setConnections((current) =>
-      current.map((connection) =>
-        connection.id === selected.id
-          ? {
-              ...connection,
-              name: draft.name,
-              engine: draft.engine,
-              host: draft.host,
-              port: draft.port,
-              draft,
-            }
-          : connection,
-      ),
-    );
-    setDrafts((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== selected.id)));
-    setFeedback({
-      tone: 'success',
-      message: `已更新「${draft.name}」的演示数据（仅本次会话有效）`,
-    });
+  const selectConnection = (connection: Connection) => {
+    setCreating(false);
+    setSelectedId(connection.id);
+    setFeedback(null);
+    setTestResult(null);
   };
 
-  const resetDraft = () => {
-    setDrafts((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== selected.id)));
-    setFeedback({ tone: 'info', message: '已放弃未保存的修改，回到演示数据原值' });
+  const saveConnection = async (input: ConnectionInput) => {
+    setSaving(true);
+    setFeedback(null);
+    try {
+      if (creating || !selected) {
+        const created = await create(input);
+        setCreating(false);
+        setSelectedId(created.id);
+        setFeedback({ tone: 'success', message: `已创建连接「${created.name}」` });
+      } else {
+        const updated = await update(selected.id, input);
+        setFeedback({ tone: 'success', message: `已保存连接「${updated.name}」` });
+      }
+    } catch (saveError) {
+      setFeedback({ tone: 'error', message: describeError(saveError) });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const addConnection = () => {
-    const id = `conn-${Date.now()}`;
-    const entry = createEmptyConnectionDraft(id);
-    setConnections((current) => [...current, entry]);
-    setSelectedId(id);
-    setFeedback({
-      tone: 'success',
-      message: '已在演示列表中新增一条连接（未做任何真实连通性处理）',
-    });
+  const testSelected = async () => {
+    if (!selected) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      setTestResult(await test(selected.id));
+    } catch (testError) {
+      setTestResult({ success: false, message: describeError(testError), latencyMs: 0 });
+    } finally {
+      setTesting(false);
+    }
   };
 
-  const removeSelected = () => {
-    const remaining = connections.filter((connection) => connection.id !== selected.id);
-    setConnections(remaining);
-    setSelectedId(remaining[0]?.id ?? '');
-    setFeedback({ tone: 'info', message: `已从演示列表移除「${selected.name}」` });
-  };
-
-  const testConnection = () => {
-    setFeedback({
-      tone: 'info',
-      message: '本阶段尚未接入数据库，未执行任何真实连接检测；这里没有成功或失败的连接结果。',
-    });
+  const deleteSelected = async () => {
+    if (!selected) return;
+    if (!window.confirm(`确定删除连接「${selected.name}」？该操作不可撤销。`)) return;
+    setDeleting(true);
+    setFeedback(null);
+    try {
+      await remove(selected.id);
+      setSelectedId(null);
+      setSchema(null);
+      setTestResult(null);
+      setFeedback({ tone: 'info', message: `已删除连接「${selected.name}」` });
+    } catch (deleteError) {
+      setFeedback({ tone: 'error', message: describeError(deleteError) });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-panel-muted px-4 py-3">
-        <div className="flex items-center gap-2">
-          <DemoBadge>演示连接</DemoBadge>
-          <p className="text-xs text-ink-muted">列表中的连接均为虚构示例，不保存任何凭据，也不建立真实连接。</p>
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-panel-muted px-4 py-3">
+        <span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success">
+          <Database className="h-3 w-3" aria-hidden="true" />
+          真实连接
+        </span>
+        <p className="text-xs text-ink-muted">
+          MySQL 连接配置按用户持久化；密码加密保存，接口不返回密码。首次仅支持 MySQL，PostgreSQL 暂不支持。
+        </p>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]">
+        <ConnectionList
+          connections={connections}
+          selectedId={selectedId}
+          loading={loading}
+          error={error}
+          onSelect={selectConnection}
+          onCreate={startCreate}
+          onReload={() => void reload()}
+        />
+
+        <div className="space-y-4">
+          {creating || selected ? (
+            <ConnectionForm
+              key={creating ? 'create' : `connection-${selected?.id}`}
+              initial={creating ? null : selected}
+              saving={saving}
+              testing={testing}
+              deleting={deleting}
+              testResult={testResult}
+              feedback={feedback?.message ?? ''}
+              onSave={saveConnection}
+              onTest={testSelected}
+              onDelete={deleteSelected}
+            />
+          ) : (
+            <section className="card p-6 text-sm text-ink-muted">
+              选择左侧连接查看详情，或点击「新增」创建第一个 MySQL 数据源。
+            </section>
+          )}
+
+          {selected && !creating ? (
+            <SchemaPanel
+              schema={schema}
+              loading={schemaLoading}
+              error={schemaError}
+              onRefresh={() => void loadSchema(selected.id)}
+            />
+          ) : null}
         </div>
-        <button type="button" className="btn-secondary px-2.5 py-1.5 text-xs" onClick={addConnection}>
-          <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-          新增演示连接
-        </button>
       </div>
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(240px,320px)_1fr]">
-        <section aria-label="演示连接列表" className="card overflow-hidden">
-          <h2 className="border-b border-line px-4 py-2.5 text-sm font-semibold text-ink">
-            连接列表（{connections.length}）
-          </h2>
-          <ul className="divide-y divide-line">
-            {connections.map((connection) => {
-              const active = connection.id === selected.id;
-              return (
-                <li key={connection.id}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(connection.id)}
-                    aria-current={active ? 'true' : undefined}
-                    className={`w-full px-4 py-3 text-left transition-colors ${
-                      active ? 'bg-accent-soft' : 'hover:bg-panel-muted'
-                    }`}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="truncate text-sm font-semibold text-ink">{connection.name}</span>
-                      <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-muted">
-                        {STATUS_LABEL[connection.demoStatus]}
-                      </span>
-                    </span>
-                    <span className="mt-1 block truncate font-mono text-[11px] text-ink-muted">
-                      {connection.engine} · {connection.host}:{connection.port}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-
-        <section aria-label="连接详情" className="card p-4">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-line pb-3">
-            <div>
-              <h2 className="text-sm font-semibold text-ink">连接详情</h2>
-              <p className="text-[11px] text-ink-muted">修改仅保存在内存，刷新页面即回到初始演示值。</p>
-            </div>
-            {dirty ? <DemoBadge variant="neutral">有未保存修改</DemoBadge> : null}
-          </div>
-
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={(event) => event.preventDefault()}>
-            <div>
-              <label className="field-label" htmlFor="conn-name">
-                连接名称
-              </label>
-              <input
-                id="conn-name"
-                className="input-field"
-                value={draft.name}
-                onChange={(event) => updateDraft('name', event.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="field-label" htmlFor="conn-engine">
-                引擎类型
-              </label>
-              <select
-                id="conn-engine"
-                className="input-field"
-                value={draft.engine}
-                onChange={(event) => updateDraft('engine', event.target.value as ConnectionEngine)}
-              >
-                <option value="mysql">MySQL</option>
-                <option value="postgresql">PostgreSQL</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="field-label" htmlFor="conn-host">
-                主机
-              </label>
-              <input
-                id="conn-host"
-                className="input-field font-mono"
-                value={draft.host}
-                onChange={(event) => updateDraft('host', event.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="field-label" htmlFor="conn-port">
-                端口
-              </label>
-              <input
-                id="conn-port"
-                type="number"
-                className="input-field font-mono"
-                value={Number.isNaN(draft.port) ? '' : draft.port}
-                onChange={(event) => updateDraft('port', Number(event.target.value))}
-              />
-            </div>
-
-            <div>
-              <label className="field-label" htmlFor="conn-username">
-                用户名（示例值）
-              </label>
-              <input
-                id="conn-username"
-                className="input-field font-mono"
-                value={draft.username}
-                onChange={(event) => updateDraft('username', event.target.value)}
-              />
-            </div>
-
-            <div>
-              <label className="field-label" htmlFor="conn-database">
-                目标数据库
-              </label>
-              <input
-                id="conn-database"
-                className="input-field font-mono"
-                value={draft.database}
-                onChange={(event) => updateDraft('database', event.target.value)}
-              />
-            </div>
-
-            <div className="sm:col-span-2">
-              <label className="field-label" htmlFor="conn-password">
-                密码
-              </label>
-              <input
-                id="conn-password"
-                type="password"
-                className="input-field font-mono"
-                value="placeholder-not-stored"
-                readOnly
-                aria-readonly="true"
-              />
-              <p className="mt-1.5 text-[11px] text-ink-muted">虚构占位符：此页不读取、不保存、不发送任何真实凭据。</p>
-            </div>
-          </form>
-
-          <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-line pt-4">
-            <button type="button" className="btn-primary" onClick={saveDraft} disabled={!dirty}>
-              <Save className="h-4 w-4" aria-hidden="true" />
-              保存演示数据
-            </button>
-            <button type="button" className="btn-secondary" onClick={resetDraft} disabled={!dirty}>
-              <RotateCcw className="h-4 w-4" aria-hidden="true" />
-              放弃修改
-            </button>
-            <button type="button" className="btn-muted" onClick={testConnection}>
-              测试连接
-            </button>
-            <button type="button" className="btn-secondary ml-auto text-danger" onClick={removeSelected}>
-              <Trash2 className="h-4 w-4" aria-hidden="true" />
-              移除该演示连接
-            </button>
-          </div>
-
-          <p role="status" aria-live="polite" className="mt-3 min-h-5 text-xs text-ink-muted">
-            {feedback ? (
-              <span className={feedback.tone === 'success' ? 'text-success' : 'text-ink-muted'}>
-                {feedback.message}
-              </span>
-            ) : null}
-          </p>
-        </section>
-      </div>
-
-      <p className="flex items-start gap-2 text-[11px] leading-relaxed text-ink-muted">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        真实连接、Schema 探查与 SQL 执行将在 P0-B01 后端阶段之后接入。
-      </p>
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import { CircleCheck, CircleX, Loader2, LogOut, Menu, X } from 'lucide-react';
-import { DemoBadge } from '../ui/DemoBadge';
 import type { BackendStatus } from '../../hooks/useBackendHealth';
 
 interface TopbarProps {
@@ -77,15 +76,12 @@ export function Topbar({
           )}
           <span className="hidden sm:inline">{STATUS_LABEL[backendStatus]}</span>
         </button>
-        <span className="hidden sm:inline-flex">
-          <DemoBadge variant="neutral">演示登录</DemoBadge>
-        </span>
         <span className="hidden max-w-[180px] truncate text-xs text-ink-muted sm:block" title={userEmail}>
           {userEmail}
         </span>
         <button type="button" className="btn-secondary px-2.5 py-1.5 text-xs" onClick={onSignOut}>
           <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-          <span className="hidden sm:inline">退出演示</span>
+          <span className="hidden sm:inline">退出登录</span>
           <span className="sm:hidden">退出</span>
         </button>
       </div>

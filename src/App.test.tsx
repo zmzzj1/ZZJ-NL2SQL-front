@@ -2,37 +2,70 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
+import type * as ConnectionsModule from './api/connections';
+
+const authState = vi.hoisted(() => ({
+  status: 'authenticated' as 'authenticated' | 'anonymous',
+  signOut: vi.fn(),
+}));
+
+vi.mock('./hooks/useAuth', () => ({
+  useAuth: () => ({
+    status: authState.status,
+    user: authState.status === 'authenticated' ? { id: 1, email: 'alice@example.com', displayName: 'Alice' } : null,
+    login: vi.fn(),
+    register: vi.fn(),
+    signOut: authState.signOut,
+  }),
+}));
 
 vi.mock('./hooks/useBackendHealth', () => ({
   useBackendHealth: () => ({ status: 'offline', checkedAt: null, recheck: () => {} }),
 }));
 
-/** AC-01/02/03/06：五个页面可达，导航高亮正确，退出演示回到 Login。 */
-describe('App 外壳与演示会话', () => {
+vi.mock('./api/connections', async () => {
+  const actual = await vi.importActual<typeof ConnectionsModule>('./api/connections');
+  return {
+    ...actual,
+    listConnections: vi.fn().mockResolvedValue([
+      {
+        id: 1,
+        name: 'A 商店库',
+        engine: 'mysql',
+        host: '127.0.0.1',
+        port: 3306,
+        database: 'sql_demo_a',
+        username: 'demo_a_reader',
+        hasPassword: true,
+      },
+    ]),
+    fetchConnectionSchema: vi.fn().mockResolvedValue({ database: 'sql_demo_a', tables: [] }),
+  };
+});
+
+describe('App 外壳与真实会话', () => {
   beforeEach(() => {
     window.localStorage.clear();
     document.documentElement.classList.remove('dark');
+    authState.status = 'authenticated';
+    authState.signOut.mockClear();
   });
 
-  const signIn = async () => {
-    const user = userEvent.setup();
+  it('未登录时展示真实登录页', async () => {
+    authState.status = 'anonymous';
     render(<App />);
-    await user.type(screen.getByLabelText('邮箱'), 'demo@queryforge.local');
-    await user.type(screen.getByLabelText('密码'), 'demo-password');
-    await user.click(screen.getByRole('button', { name: /进入工作台/ }));
-    return user;
-  };
 
-  it('TC-01 未进入演示会话时展示 Login', () => {
-    render(<App />);
-    expect(screen.getByRole('heading', { name: '演示登录' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '登录工作台' })).toBeInTheDocument();
     expect(screen.queryByRole('navigation', { name: '主导航' })).not.toBeInTheDocument();
   });
 
-  it('TC-04 连续切换四个页面时内容与导航高亮同步', async () => {
-    const user = await signIn();
+  it('登录态恢复后可在四个页面间切换', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await screen.findByLabelText('主导航');
     const expectations = [
-      { name: /数据库连接/, content: /演示连接/ },
+      { name: /数据库连接/, content: /我的连接/ },
       { name: /历史记录/, content: /演示记录/ },
       { name: /设置 本地界面偏好/, content: /外观主题/ },
       { name: /工作台/, content: /提问/ },
@@ -42,17 +75,17 @@ describe('App 外壳与演示会话', () => {
       await user.click(screen.getByRole('button', { name: item.name }));
       const activeNav = screen.getByRole('button', { name: item.name });
       expect(activeNav).toHaveAttribute('aria-current', 'page');
-      expect(screen.getByRole('main')).toHaveTextContent(item.content);
+      expect((await screen.findAllByText(item.content)).length).toBeGreaterThan(0);
     }
   });
 
-  it('TC-12 退出演示后回到 Login 并清理会话标记', async () => {
-    const user = await signIn();
-    expect(window.localStorage.getItem('queryforge.demo-session')).toContain('demo@queryforge.local');
+  it('退出登录调用服务端注销', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByLabelText('主导航');
 
-    await user.click(screen.getByRole('button', { name: /退出演示/ }));
+    await user.click(screen.getByRole('button', { name: /退出登录/ }));
 
-    expect(screen.getByRole('heading', { name: '演示登录' })).toBeInTheDocument();
-    expect(window.localStorage.getItem('queryforge.demo-session')).toBeNull();
+    expect(authState.signOut).toHaveBeenCalledTimes(1);
   });
 });

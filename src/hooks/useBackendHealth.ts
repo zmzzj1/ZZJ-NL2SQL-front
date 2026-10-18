@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { fetchHealth } from '../api/client';
+import { fetchHealth } from '../api/health';
 
 export type BackendStatus = 'checking' | 'online' | 'offline';
 

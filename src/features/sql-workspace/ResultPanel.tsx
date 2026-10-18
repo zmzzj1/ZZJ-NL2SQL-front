@@ -24,7 +24,7 @@ export function ResultPanel({ execution, onRetry }: ResultPanelProps) {
       {execution.status === 'running' ? (
         <div className="flex items-center gap-2 rounded-lg border border-dashed border-line bg-panel-muted px-3 py-6 text-xs text-ink-muted">
           <Loader2 className="h-4 w-4 animate-spin text-accent" aria-hidden="true" />
-          正在查询本地演示库 sql_demo…
+          正在当前数据源上执行查询…
         </div>
       ) : null}
 
@@ -50,7 +50,7 @@ export function ResultPanel({ execution, onRetry }: ResultPanelProps) {
         <EmptyState
           icon={Table2}
           title="尚未执行 SQL"
-          description="生成 SQL 后点击「执行查询」，这里会展示来自本地 MySQL 演示库的真实列与行。"
+          description="生成 SQL 后点击「执行查询」，这里会展示当前数据源返回的真实列与行。"
         />
       ) : null}
     </div>

@@ -91,7 +91,7 @@ export function SqlPanel({
         <p className="text-[11px] text-ink-muted">
           {generation.status === 'done' && !sqlLooksReadOnly
             ? '返回内容不像只读 SELECT，执行按钮已禁用。'
-            : '生成与执行是两个独立操作；执行只读演示库。'}
+            : '生成与执行是两个独立操作；执行当前数据源的只读查询。'}
         </p>
       </div>
     </div>

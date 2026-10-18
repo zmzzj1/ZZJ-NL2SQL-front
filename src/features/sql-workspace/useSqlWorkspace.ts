@@ -1,18 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { describeError, executeSql, streamSqlGeneration } from '../../api/client';
+import { describeError } from '../../api/http';
+import { executeSql, streamSqlGeneration } from '../../api/sql';
 import type { ExecutionResult } from '../../api/contract';
 import type { ChatMessage } from '../../types';
-
-/** 演示库的公开字段说明；界面上明确标注为演示 Schema。 */
-const DEMO_SCHEMA_CONTEXT = `demo_orders(id BIGINT, customer_id BIGINT, amount DECIMAL(12,2), status VARCHAR(16), created_at DATETIME)
-demo_customers(id BIGINT, name VARCHAR(64), city VARCHAR(64), created_at DATETIME)
-demo_order_items(id BIGINT, order_id BIGINT, sku VARCHAR(32), quantity INT, price DECIMAL(10,2))`;
 
 const GREETING: ChatMessage = {
   id: 'msg-greeting',
   role: 'assistant',
   content:
-    '已接入真实后端：输入问题后，SQL 会从模型流式返回；只有你点击「执行查询」，才会以只读方式访问本地演示库 sql_demo。',
+    '已接入真实后端：选择数据源后输入问题，SQL 会基于该连接的真实表结构流式生成；只有你点击「执行查询」，才会在该数据源上执行只读 SELECT。',
   createdAt: '刚刚',
 };
 
@@ -54,12 +50,10 @@ function looksLikeReadOnlySql(sql: string): boolean {
 }
 
 /**
- * SQL 工作台的状态机：
- * 1) 自然语言 -> SSE 流式生成 SQL；
- * 2) 用户显式执行 -> 只读演示库结果。
- * 负责取消、防止迟到片段覆盖新请求，以及卸载时释放连接。
+ * SQL 工作台状态机，绑定当前选中的 connectionId：
+ * 生成与执行都携带同一个连接 ID；切换连接会取消未完成 SSE 并清空旧 SQL/结果。
  */
-export function useSqlWorkspace() {
+export function useSqlWorkspace(connectionId: number | null) {
   const [messages, setMessages] = useState<ChatMessage[]>([GREETING]);
   const [input, setInput] = useState('');
   const [generation, setGeneration] = useState<GenerationState>(IDLE_GENERATION);
@@ -69,6 +63,7 @@ export function useSqlWorkspace() {
   const abortRef = useRef<AbortController | null>(null);
   const runSeqRef = useRef(0);
   const sqlAccumulatorRef = useRef('');
+  const lastConnectionRef = useRef<number | null>(connectionId);
 
   useEffect(
     () => () => {
@@ -77,10 +72,32 @@ export function useSqlWorkspace() {
     [],
   );
 
+  // 切换数据源：丢弃旧请求，清空旧 SQL 与结果，避免把 A 库 SQL 提交到 B 库。
+  useEffect(() => {
+    const previous = lastConnectionRef.current;
+    if (previous === connectionId) return;
+    lastConnectionRef.current = connectionId;
+    runSeqRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    sqlAccumulatorRef.current = '';
+    setGeneration(IDLE_GENERATION);
+    setExecution(IDLE_EXECUTION);
+    if (previous !== null && connectionId === null) {
+      setMessages((current) => [
+        ...current,
+        message('assistant', '当前没有可用的数据源，请先在数据库连接页创建连接。'),
+      ]);
+    } else if (previous !== null) {
+      setMessages((current) => [...current, message('assistant', '已切换数据源，之前的 SQL 与查询结果已清空。')]);
+    }
+  }, [connectionId]);
+
   const trimmedInput = input.trim();
-  const canSend = trimmedInput.length > 0 && generation.status !== 'streaming';
+  const canSend = trimmedInput.length > 0 && generation.status !== 'streaming' && connectionId !== null;
   const sqlLooksReadOnly = looksLikeReadOnlySql(generation.sql);
   const canExecute =
+    connectionId !== null &&
     generation.status === 'done' &&
     generation.sql.trim().length > 0 &&
     sqlLooksReadOnly &&
@@ -89,7 +106,7 @@ export function useSqlWorkspace() {
   const sendQuestion = useCallback(
     (rawQuestion: string) => {
       const question = rawQuestion.trim();
-      if (!question || generation.status === 'streaming') return;
+      if (!question || connectionId === null || generation.status === 'streaming') return;
 
       setInput('');
       setLastQuestion(question);
@@ -104,7 +121,7 @@ export function useSqlWorkspace() {
       abortRef.current = controller;
 
       void streamSqlGeneration(
-        { userInput: question, schemaContext: DEMO_SCHEMA_CONTEXT, strategyName: 'default' },
+        { userInput: question, connectionId, strategyName: 'default' },
         {
           onStart: (requestId) => {
             if (runSeqRef.current !== runId) return;
@@ -124,7 +141,7 @@ export function useSqlWorkspace() {
               ...current,
               message(
                 'assistant',
-                sql ? 'SQL 已生成。请检查语句后点击「执行查询」，结果来自本地演示库。' : '模型没有返回任何 SQL 内容。',
+                sql ? 'SQL 已生成。请检查语句后点击「执行查询」，结果来自当前数据源。' : '模型没有返回任何 SQL 内容。',
               ),
             ]);
           },
@@ -142,7 +159,7 @@ export function useSqlWorkspace() {
           if (runSeqRef.current === runId) abortRef.current = null;
         });
     },
-    [generation.status],
+    [connectionId, generation.status],
   );
 
   const sendMessage = () => sendQuestion(input);
@@ -169,10 +186,10 @@ export function useSqlWorkspace() {
 
   const runQuery = async () => {
     const sql = generation.sql.trim();
-    if (!canExecute) return;
+    if (!canExecute || connectionId === null) return;
     setExecution({ status: 'running' });
     try {
-      const result = await executeSql(sql);
+      const result = await executeSql(connectionId, sql);
       setExecution({ status: 'done', result });
     } catch (error) {
       setExecution({ status: 'error', errorMessage: describeError(error) });

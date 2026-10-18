@@ -20,7 +20,7 @@ export const workspaceNavItems: NavItem[] = [
   {
     key: 'database',
     label: '数据库连接',
-    description: '演示连接列表',
+    description: '真实 MySQL 连接',
     icon: Database,
   },
   {
