@@ -23,6 +23,21 @@ export type ErrorCode =
   | 'LLM_UPSTREAM_ERROR'
   | 'SERVICE_UNAVAILABLE'
   | 'INTERNAL_ERROR'
+  | 'TOOL_NOT_FOUND'
+  | 'TOOL_FORBIDDEN'
+  | 'TOOL_INVALID_ARGUMENT'
+  | 'TOOL_EXECUTION_ERROR'
+  | 'ANALYSIS_RUN_NOT_FOUND'
+  | 'ANALYSIS_SANDBOX_UNAVAILABLE'
+  | 'ANALYSIS_EXECUTION_ERROR'
+  | 'REPORT_NOT_FOUND'
+  | 'MCP_SERVER_NOT_FOUND'
+  | 'MCP_UNSUPPORTED'
+  | 'MCP_CALL_ERROR'
+  | 'WORKFLOW_NOT_FOUND'
+  | 'WORKFLOW_INVALID_GRAPH'
+  | 'WORKFLOW_STATE_CONFLICT'
+  | 'WORKFLOW_RUN_NOT_FOUND'
   /** 仅前端使用：请求未到达后端（断网、后端关闭、代理失败）。 */
   | 'NETWORK_ERROR';
 
@@ -285,4 +300,156 @@ export interface ExecutionResult {
   rows: Record<string, QueryCell>[];
   rowCount: number;
   truncated: boolean;
+}
+
+/** P6：结构化图表 schema。 */
+export type ChartType = 'table' | 'bar' | 'line' | 'pie';
+
+export interface ChartColumn {
+  name: string;
+  dataType: string;
+}
+
+export interface TypedChart {
+  chartType: ChartType;
+  title: string;
+  xLabel?: string;
+  yLabel?: string;
+  columns?: ChartColumn[];
+  data?: unknown[][];
+  categories?: string[];
+  labels?: string[];
+  values?: number[];
+}
+
+export interface AnalysisRun {
+  id: number;
+  queryHistoryId: number | null;
+  conversationId: number | null;
+  connectionId: number | null;
+  agentRunId: number | null;
+  agentStepId: number | null;
+  engine: string;
+  status: string;
+  inputRowCount: number;
+  chartType: ChartType | null;
+  charts: TypedChart[];
+  summary: string | null;
+  errorCode: ErrorCode | null;
+  errorMessage: string | null;
+  exitCode: number;
+  durationMs: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAnalysisRunRequest {
+  queryHistoryId: number;
+  code?: string;
+  chartType?: ChartType;
+}
+
+export interface Report {
+  id: number;
+  analysisRunId: number | null;
+  connectionId: number | null;
+  agentRunId: number | null;
+  title: string;
+  status: string;
+  htmlContent: string;
+  sizeBytes: number;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateReportRequest {
+  analysisRunId: number;
+  title?: string;
+}
+
+export interface ToolDescriptor {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  readOnly: boolean;
+}
+
+export interface McpServer {
+  name: string;
+  transport: string;
+  command: string;
+}
+
+export interface McpTool {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+/** P6：工作流 DAG。 */
+export type WorkflowNodeType = 'START' | 'END' | 'SQL_AGENT' | 'PYTHON_ANALYSIS' | 'REPORT' | 'MCP_TOOL';
+
+export interface WorkflowNode {
+  id: string;
+  type: WorkflowNodeType;
+  label: string;
+  config?: WorkflowNodeConfig | null;
+}
+
+export interface WorkflowNodeConfig {
+  objective?: string;
+  connectionId?: number | null;
+  toolName?: string;
+  chartType?: ChartType;
+  code?: string;
+}
+
+export interface WorkflowEdge {
+  from: string;
+  to: string;
+}
+
+export interface WorkflowGraph {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+}
+
+export interface Workflow {
+  id: number;
+  name: string;
+  description: string | null;
+  definition: WorkflowGraph;
+  revision: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowRequest {
+  name: string;
+  description?: string;
+  definition: WorkflowGraph;
+}
+
+export interface WorkflowNodeState {
+  nodeId: string;
+  nodeType: WorkflowNodeType;
+  sequence: number;
+  status: string;
+  outputSummary: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+}
+
+export interface WorkflowRun {
+  id: number;
+  workflowId: number;
+  workflowRevision: number;
+  status: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  nodes: WorkflowNodeState[];
+  createdAt: string;
+  updatedAt: string;
 }

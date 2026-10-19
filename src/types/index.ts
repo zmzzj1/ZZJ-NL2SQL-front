@@ -3,7 +3,7 @@
 import type { MessageStatus } from '../api/contract';
 
 /** 应用外壳内的页面；未登录时由服务端会话决定显示 Login。 */
-export type PageKey = 'login' | 'dashboard' | 'database' | 'history' | 'knowledge' | 'settings';
+export type PageKey = 'login' | 'dashboard' | 'database' | 'history' | 'knowledge' | 'settings' | 'report' | 'workflow';
 
 export type WorkspacePageKey = Exclude<PageKey, 'login'>;
 

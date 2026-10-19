@@ -1,6 +1,6 @@
 # QueryForge 前端（真实用户与多数据源 SQL 工作台）
 
-React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）。
+React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6 新增分析报告页与可视化工作流页。
 
 ## 已实现
 
@@ -14,6 +14,8 @@ React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身�
 | 会话与历史 | 真实：会话恢复/删除，查询历史筛选、详情与删除 |
 | Agent | 真实接口：规划时间线、逐步确认/拒绝、取消与运行恢复 |
 | 业务知识 | 真实：术语/SQL 示例 CRUD、按连接关键词检索预览 |
+| 分析报告 | 真实：从历史选 SQL → 分析（SSE）→ 图表 → 报告 → 沙箱 iframe 预览 |
+| 可视化工作流 | 真实：DAG 编辑器、保存/运行/审批续跑、节点状态 |
 | 设置 | 本地主题与 SQL 字号 |
 
 ## 环境要求
@@ -70,6 +72,12 @@ npm run check   # 五项串联
 | POST | `/api/v1/sql/execute` | 按会话和数据源执行只读 SQL |
 | POST/GET | `/api/v1/agent/runs/**` | Agent 运行、确认、拒绝、取消与恢复 |
 | POST/GET/PUT/DELETE | `/api/v1/knowledge/**` | 业务知识维护与检索 |
+| GET/POST | `/api/v1/tools`、`/api/v1/tools/invoke` | 只读工具目录与调用 |
+| POST/GET | `/api/v1/analysis/runs/**` | Python 隔离分析（SSE）与详情 |
+| POST/GET/DELETE | `/api/v1/reports`、`/{id}`、`/{id}/preview` | 报告生成、读取与净化预览 |
+| GET/POST | `/api/v1/mcp/servers`、`.../{name}/test`、`.../{tool}/call` | MCP 服务发现与只读调用 |
+| POST/GET/PUT/DELETE | `/api/v1/workflows`、`/api/v1/workflows/{id}` | 工作流 DAG 定义与版本化 |
+| POST | `/api/v1/workflows/{id}/runs/stream`、`.../approve/stream` | 工作流运行与审批续跑 |
 
 错误体统一 `{code,message,requestId}`；前端按 `code` 展示文案。
 
@@ -83,6 +91,6 @@ src/
 ├── features/conversations/   # 会话列表与操作
 ├── features/sql-workspace/   # SQL 工作台状态机与展示
 ├── hooks/                    # useAuth、健康检查、偏好
-├── pages/                    # 五个页面组合
+├── pages/                    # 页面组合（Dashboard/知识/分析报告/工作流/设置）
 └── mocks/                    # 设置页使用的静态 SQL 示例
 ```

@@ -1,4 +1,12 @@
-import { BookOpen, Database, History as HistoryIcon, LayoutDashboard, Settings } from 'lucide-react';
+import {
+  BarChart3,
+  BookOpen,
+  Database,
+  History as HistoryIcon,
+  LayoutDashboard,
+  Settings,
+  Workflow as WorkflowIcon,
+} from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { WorkspacePageKey } from '../../types';
 
@@ -9,7 +17,7 @@ export interface NavItem {
   icon: LucideIcon;
 }
 
-/** 工作台只有这四个已实现页面，不为未开发功能预留入口。 */
+/** 工作台页面入口，只列出已实现页面。 */
 export const workspaceNavItems: NavItem[] = [
   {
     key: 'dashboard',
@@ -34,6 +42,18 @@ export const workspaceNavItems: NavItem[] = [
     label: '业务知识',
     description: '术语与 SQL 示例',
     icon: BookOpen,
+  },
+  {
+    key: 'report',
+    label: '分析报告',
+    description: '真实数据图表与报告',
+    icon: BarChart3,
+  },
+  {
+    key: 'workflow',
+    label: '工作流',
+    description: '可视化 DAG 编排',
+    icon: WorkflowIcon,
   },
   {
     key: 'settings',
