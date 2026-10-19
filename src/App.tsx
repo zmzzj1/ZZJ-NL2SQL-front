@@ -13,6 +13,7 @@ import { StudioPage } from './pages/StudioPage';
 import { WorkspacePage } from './pages/WorkspacePage';
 import { MemoryPage } from './pages/MemoryPage';
 import { WorkflowPage } from './pages/WorkflowPage';
+import { AdminPage } from './pages/AdminPage';
 import { useAuth } from './hooks/useAuth';
 import { useUiPreferences } from './hooks/useUiPreferences';
 import { useBackendHealth } from './hooks/useBackendHealth';
@@ -66,6 +67,7 @@ export default function App() {
       {page === 'memory' ? <MemoryPage /> : null}
       {page === 'report' ? <ReportPage /> : null}
       {page === 'workflow' ? <WorkflowPage /> : null}
+      {page === 'admin' ? <AdminPage /> : null}
       {page === 'settings' ? (
         <SettingsPage
           preferences={preferences}

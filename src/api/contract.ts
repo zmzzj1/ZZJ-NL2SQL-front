@@ -55,6 +55,17 @@ export type ErrorCode =
   | 'MEMORY_NOT_FOUND'
   | 'INDEX_NOT_READY'
   | 'EMBEDDING_UNAVAILABLE'
+  | 'PROVIDER_NOT_FOUND'
+  | 'MODEL_PROFILE_NOT_FOUND'
+  | 'MODEL_INCOMPATIBLE'
+  | 'ROUTE_POLICY_NOT_FOUND'
+  | 'ROUTE_POLICY_CONFLICT'
+  | 'ROUTE_POLICY_NOT_PUBLISHED'
+  | 'RATE_LIMITED'
+  | 'BUDGET_EXCEEDED'
+  | 'MODEL_CIRCUIT_OPEN'
+  | 'QUOTA_NOT_FOUND'
+  | 'ADMIN_FORBIDDEN'
   /** 仅前端使用：请求未到达后端（断网、后端关闭、代理失败）。 */
   | 'NETWORK_ERROR';
 
@@ -630,4 +641,50 @@ export interface LongTermMemory {
   expiresAt: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ModelProvider {
+  id: number;
+  name: string;
+  protocol: string;
+  baseUrl: string;
+  enabled: boolean;
+  createdBy: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ModelType = 'CHAT' | 'EMBEDDING';
+
+export interface ModelProfile {
+  id: number;
+  providerId: number;
+  modelId: string;
+  modelType: ModelType;
+  supportsStreaming: boolean;
+  supportsToolCalls: boolean;
+  supportsJson: boolean;
+  contextLimit: number;
+  outputLimit: number;
+  embeddingDim: number | null;
+  status: string;
+  capabilitiesVerified: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type RouteStrategy = 'ROUND_ROBIN' | 'LATENCY_FIRST' | 'SUCCESS_RATE_FIRST' | 'SMART_WEIGHTED';
+
+export interface RoutePolicyVersion {
+  id: number;
+  policyId: number;
+  versionNo: number;
+  strategy: RouteStrategy;
+  candidates: string;
+  fallbackChain: string;
+  weights: string | null;
+  affinityTtlSeconds: number;
+  status: string;
+  publishedAt: string | null;
+  createdAt: string;
 }

@@ -15,7 +15,8 @@ export type PageKey =
   | 'studio'
   | 'skills'
   | 'workspace'
-  | 'memory';
+  | 'memory'
+  | 'admin';
 
 export type WorkspacePageKey = Exclude<PageKey, 'login'>;
 

@@ -8,6 +8,7 @@ import {
   History as HistoryIcon,
   LayoutDashboard,
   Settings,
+  ShieldCheck,
   Users,
   Workflow as WorkflowIcon,
 } from 'lucide-react';
@@ -88,5 +89,11 @@ export const workspaceNavItems: NavItem[] = [
     label: '设置',
     description: '本地界面偏好',
     icon: Settings,
+  },
+  {
+    key: 'admin',
+    label: '平台管理',
+    description: '模型、监控与配额',
+    icon: ShieldCheck,
   },
 ];

@@ -1,6 +1,6 @@
 # QueryForge 前端（真实用户与多数据源 SQL 工作台）
 
-React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6 新增分析报告页与可视化工作流页；P7 新增 Agent Studio 与 Skills 页；P8 新增工作空间与长期记忆页，并接入混合知识检索。
+React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6–P8 新增分析报告、工作流、Agent Studio、Skills、工作空间、长期记忆和混合检索；P9 新增模型治理管理后台。
 
 ## 已实现
 
@@ -20,6 +20,7 @@ React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身�
 | Skills | 真实：CRUD、发布不可变版本、模板白名单变量校验、版本历史 |
 | 工作空间 | 真实：创建空间、成员角色管理、资源授权与撤销 |
 | 长期记忆 | 真实：个人/空间记忆 CRUD、核验状态、禁用与检索 |
+| 平台管理 | 真实：供应商与模型档案、授权、连接测试、调用监控及配额治理；仅平台管理员可访问 |
 | 设置 | 本地主题与 SQL 字号 |
 
 ## 环境要求
@@ -86,6 +87,8 @@ npm run check   # 五项串联
 | GET/POST/PATCH/DELETE | `/api/v1/skills/**` | Skill Registry：CRUD、发布、版本 |
 | GET/POST/PATCH/DELETE | `/api/v1/workspaces/**` | 工作空间、成员角色与资源授权 |
 | GET/POST/PATCH/DELETE | `/api/v1/memories/**` | 长期记忆维护与检索 |
+| GET/POST/PATCH | `/api/v1/model/**` | 模型供应商、能力档案、授权与路由策略 |
+| GET/POST | `/api/v1/admin/**` | 管理概览、模型用量、配额与审计 |
 
 错误体统一 `{code,message,requestId}`；前端按 `code` 展示文案。
 
@@ -99,6 +102,6 @@ src/
 ├── features/conversations/   # 会话列表与操作
 ├── features/sql-workspace/   # SQL 工作台状态机与展示
 ├── hooks/                    # useAuth、健康检查、偏好
-├── pages/                    # 页面组合（Dashboard/知识/报告/工作流/Studio/Skills/空间/记忆/设置）
+├── pages/                    # 页面组合（Dashboard/知识/报告/工作流/Studio/Skills/空间/记忆/管理/设置）
 └── mocks/                    # 设置页使用的静态 SQL 示例
 ```
