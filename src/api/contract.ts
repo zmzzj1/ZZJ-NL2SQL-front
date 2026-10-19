@@ -38,6 +38,18 @@ export type ErrorCode =
   | 'WORKFLOW_INVALID_GRAPH'
   | 'WORKFLOW_STATE_CONFLICT'
   | 'WORKFLOW_RUN_NOT_FOUND'
+  | 'AGENT_NOT_FOUND'
+  | 'AGENT_VERSION_NOT_FOUND'
+  | 'AGENT_CONFLICT'
+  | 'AGENT_NOT_PUBLISHED'
+  | 'SKILL_NOT_FOUND'
+  | 'SKILL_VERSION_NOT_FOUND'
+  | 'SKILL_NOT_PUBLISHED'
+  | 'SKILL_TEMPLATE_TOO_LONG'
+  | 'SKILL_TEMPLATE_INVALID'
+  | 'SKILL_INVALID_REFERENCE'
+  | 'TOOL_NOT_IN_AGENT_WHITELIST'
+  | 'MODEL_UNAVAILABLE'
   /** 仅前端使用：请求未到达后端（断网、后端关闭、代理失败）。 */
   | 'NETWORK_ERROR';
 
@@ -452,4 +464,102 @@ export interface WorkflowRun {
   nodes: WorkflowNodeState[];
   createdAt: string;
   updatedAt: string;
+}
+
+/** P7：Agent Studio 与 Skill Registry。 */
+export interface AgentRagConfig {
+  enabled: boolean;
+  topK: number;
+}
+
+export interface AgentMemoryConfig {
+  enabled: boolean;
+  contextBudget: number;
+}
+
+export interface AgentConfigContent {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  model: string | null;
+  tools: string[];
+  rag: AgentRagConfig;
+  memory: AgentMemoryConfig;
+  skillIds: number[];
+}
+
+export type AgentStatus = 'DRAFT' | 'ARCHIVED';
+
+export interface Agent {
+  id: number;
+  name: string;
+  description: string;
+  status: AgentStatus;
+  draftRevision: number;
+  content: AgentConfigContent;
+  publishedVersionId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentInput {
+  name: string;
+  description?: string;
+  systemPrompt?: string;
+  model?: string | null;
+  tools?: string[];
+  rag?: AgentRagConfig;
+  memory?: AgentMemoryConfig;
+  skillIds?: number[];
+}
+
+export interface AgentVersion {
+  id: number;
+  agentId: number;
+  versionNo: number;
+  content: AgentConfigContent;
+  toolIds: string[];
+  modelRef: string | null;
+  contentHash: string;
+  publishedAt: string;
+}
+
+export interface SkillContent {
+  triggerScenes: string;
+  guidanceTemplate: string;
+  parameterSchema: string;
+  tags: string[];
+}
+
+export type SkillStatus = 'DRAFT' | 'PUBLISHED' | 'DISABLED';
+
+export interface Skill {
+  id: number;
+  name: string;
+  slug: string;
+  description: string;
+  status: SkillStatus;
+  draftRevision: number;
+  content: SkillContent;
+  publishedVersionId: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SkillInput {
+  name: string;
+  slug: string;
+  description?: string;
+  triggerScenes: string;
+  guidanceTemplate: string;
+  parameterSchema?: string;
+  tags?: string[];
+}
+
+export interface SkillVersion {
+  id: number;
+  skillId: number;
+  versionNo: number;
+  contentHash: string;
+  publishedAt: string;
 }

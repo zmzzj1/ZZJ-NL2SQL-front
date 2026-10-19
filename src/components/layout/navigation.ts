@@ -1,6 +1,8 @@
 import {
   BarChart3,
   BookOpen,
+  BookMarked,
+  Bot,
   Database,
   History as HistoryIcon,
   LayoutDashboard,
@@ -42,6 +44,18 @@ export const workspaceNavItems: NavItem[] = [
     label: '业务知识',
     description: '术语与 SQL 示例',
     icon: BookOpen,
+  },
+  {
+    key: 'studio',
+    label: 'Agent Studio',
+    description: '配置与发布 Agent',
+    icon: Bot,
+  },
+  {
+    key: 'skills',
+    label: 'Skills',
+    description: '可复用任务指引',
+    icon: BookMarked,
   },
   {
     key: 'report',

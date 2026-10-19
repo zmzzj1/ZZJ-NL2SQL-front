@@ -8,6 +8,8 @@ import { KnowledgePage } from './pages/KnowledgePage';
 import { LoginPage } from './pages/LoginPage';
 import { ReportPage } from './pages/ReportPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { SkillsPage } from './pages/SkillsPage';
+import { StudioPage } from './pages/StudioPage';
 import { WorkflowPage } from './pages/WorkflowPage';
 import { useAuth } from './hooks/useAuth';
 import { useUiPreferences } from './hooks/useUiPreferences';
@@ -56,6 +58,8 @@ export default function App() {
       {page === 'database' ? <DatabasePage /> : null}
       {page === 'history' ? <HistoryPage fontSize={preferences.editorFontSize} /> : null}
       {page === 'knowledge' ? <KnowledgePage /> : null}
+      {page === 'studio' ? <StudioPage /> : null}
+      {page === 'skills' ? <SkillsPage /> : null}
       {page === 'report' ? <ReportPage /> : null}
       {page === 'workflow' ? <WorkflowPage /> : null}
       {page === 'settings' ? (

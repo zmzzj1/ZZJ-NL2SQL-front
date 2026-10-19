@@ -1,6 +1,6 @@
 # QueryForge 前端（真实用户与多数据源 SQL 工作台）
 
-React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6 新增分析报告页与可视化工作流页。
+React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6 新增分析报告页与可视化工作流页；P7 新增 Agent Studio 与 Skills 页。
 
 ## 已实现
 
@@ -16,6 +16,8 @@ React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身�
 | 业务知识 | 真实：术语/SQL 示例 CRUD、按连接关键词检索预览 |
 | 分析报告 | 真实：从历史选 SQL → 分析（SSE）→ 图表 → 报告 → 沙箱 iframe 预览 |
 | 可视化工作流 | 真实：DAG 编辑器、保存/运行/审批续跑、节点状态 |
+| Agent Studio | 真实：创建/编辑/归档、工具白名单、RAG/Memory、Skill 绑定、发布/版本/回滚、草稿测试运行（SSE） |
+| Skills | 真实：CRUD、发布不可变版本、模板白名单变量校验、版本历史 |
 | 设置 | 本地主题与 SQL 字号 |
 
 ## 环境要求
@@ -78,6 +80,8 @@ npm run check   # 五项串联
 | GET/POST | `/api/v1/mcp/servers`、`.../{name}/test`、`.../{tool}/call` | MCP 服务发现与只读调用 |
 | POST/GET/PUT/DELETE | `/api/v1/workflows`、`/api/v1/workflows/{id}` | 工作流 DAG 定义与版本化 |
 | POST | `/api/v1/workflows/{id}/runs/stream`、`.../approve/stream` | 工作流运行与审批续跑 |
+| GET/POST/PATCH/DELETE | `/api/v1/studio/agents/**` | Agent Studio：草稿、发布、版本、回滚、测试运行 |
+| GET/POST/PATCH/DELETE | `/api/v1/skills/**` | Skill Registry：CRUD、发布、版本 |
 
 错误体统一 `{code,message,requestId}`；前端按 `code` 展示文案。
 
@@ -91,6 +95,6 @@ src/
 ├── features/conversations/   # 会话列表与操作
 ├── features/sql-workspace/   # SQL 工作台状态机与展示
 ├── hooks/                    # useAuth、健康检查、偏好
-├── pages/                    # 页面组合（Dashboard/知识/分析报告/工作流/设置）
+├── pages/                    # 页面组合（Dashboard/知识/分析报告/工作流/Studio/Skills/设置）
 └── mocks/                    # 设置页使用的静态 SQL 示例
 ```
