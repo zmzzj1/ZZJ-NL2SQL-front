@@ -12,6 +12,8 @@ interface ConnectionFormProps {
   onSave: (input: ConnectionInput) => Promise<void>;
   onTest: () => Promise<void>;
   onDelete: () => Promise<void>;
+  /** 是否已进入删除确认态（第二次点击才真正删除）。 */
+  confirmDelete?: boolean;
 }
 
 interface FormState {
@@ -44,7 +46,7 @@ function toForm(connection: Connection | null): FormState {
   };
 }
 
-/** 真实连接表单：创建时密码必填，编辑时留空表示沿用服务端已保存的密文。 */
+/** 真实连接表单：密码可留空（无密码账号如本地 root）；编辑时留空表示沿用服务端已保存的密文。 */
 export function ConnectionForm({
   initial,
   saving,
@@ -55,6 +57,7 @@ export function ConnectionForm({
   onSave,
   onTest,
   onDelete,
+  confirmDelete = false,
 }: ConnectionFormProps) {
   const [form, setForm] = useState<FormState>(() => toForm(initial));
   const [error, setError] = useState('');
@@ -78,10 +81,6 @@ export function ConnectionForm({
     const port = Number(form.port);
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       setError('端口需为 1-65535 的整数');
-      return;
-    }
-    if (!initial && !form.password) {
-      setError('新增连接时必须填写密码');
       return;
     }
     setError('');
@@ -195,10 +194,12 @@ export function ConnectionForm({
             value={form.password}
             maxLength={128}
             onChange={(event) => update('password', event.target.value)}
-            placeholder={initial?.hasPassword ? '留空表示沿用已保存的密码' : '首次创建必须填写'}
+            placeholder={initial?.hasPassword ? '留空表示沿用已保存的密码' : '可留空（无密码账号，如本地 root）'}
             autoComplete="new-password"
           />
-          <p className="mt-1 text-[11px] text-ink-muted">密码只提交一次，服务端加密保存；接口不会返回密码或密文。</p>
+          <p className="mt-1 text-[11px] text-ink-muted">
+            密码只提交一次，服务端加密保存；接口不会返回密码或密文。无密码账号请留空；编辑时留空表示沿用旧密码。
+          </p>
         </div>
 
         {error ? (
@@ -250,19 +251,24 @@ export function ConnectionForm({
             测试连接
           </button>
           {initial ? (
-            <button
-              type="button"
-              className="btn-secondary text-danger"
-              onClick={() => void onDelete()}
-              disabled={deleting}
-            >
-              {deleting ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              )}
-              删除
-            </button>
+            <>
+              <button
+                type="button"
+                className={`btn-secondary ${confirmDelete ? 'bg-danger/10 text-danger' : 'text-danger'}`}
+                onClick={() => void onDelete()}
+                disabled={deleting}
+              >
+                {deleting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                )}
+                {confirmDelete ? '确认删除' : '删除'}
+              </button>
+              {confirmDelete ? (
+                <span className="text-[11px] font-semibold text-danger">再次点击「确认删除」将永久删除该连接。</span>
+              ) : null}
+            </>
           ) : null}
           {!initial ? <span className="text-[11px] text-ink-muted">保存后才能测试连通性。</span> : null}
         </div>

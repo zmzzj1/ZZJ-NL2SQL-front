@@ -1,13 +1,32 @@
 import { useEffect, useRef } from 'react';
 import { Eraser, Loader2, Send, Sparkles, Square } from 'lucide-react';
+import type { MessageStatus } from '../../api/contract';
 import type { ChatMessage } from '../../types';
 
 const QUICK_PROMPTS = ['统计记录数量', '按时间统计趋势', '查看前 10 条记录'];
+
+const STATUS_LABEL: Record<MessageStatus, string> = {
+  IN_PROGRESS: '生成中',
+  COMPLETED: '已完成',
+  FAILED: '失败',
+  CANCELED: '已取消',
+};
+
+const STATUS_CLASS: Record<MessageStatus, string> = {
+  IN_PROGRESS: 'border-accent/40 bg-accent-soft text-accent',
+  COMPLETED: 'border-success/40 bg-success/10 text-success',
+  FAILED: 'border-danger/40 bg-danger/10 text-danger',
+  CANCELED: 'border-line bg-panel-muted text-ink-muted',
+};
 
 interface ChatPanelProps {
   messages: ChatMessage[];
   input: string;
   generating: boolean;
+  loading?: boolean;
+  error?: string | null;
+  /** 流式中的提示文案；Agent 模式与单步 SQL 不同。 */
+  progressLabel?: string;
   canSend: boolean;
   onInputChange: (value: string) => void;
   onSend: () => void;
@@ -20,6 +39,9 @@ export function ChatPanel({
   messages,
   input,
   generating,
+  loading = false,
+  error = null,
+  progressLabel = '正在从后端流式接收 SQL…',
   canSend,
   onInputChange,
   onSend,
@@ -42,11 +64,11 @@ export function ChatPanel({
         <h2 className="text-sm font-semibold text-ink">提问</h2>
         <div className="flex items-center gap-2">
           <span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-0.5 text-[11px] font-semibold text-success">
-            真实 Schema
+            真实会话
           </span>
           <button type="button" className="btn-muted px-2 py-1 text-xs" onClick={onClear}>
             <Eraser className="h-3.5 w-3.5" aria-hidden="true" />
-            清空
+            新对话
           </button>
         </div>
       </div>
@@ -57,32 +79,62 @@ export function ChatPanel({
         aria-live="polite"
         aria-atomic="false"
       >
-        {messages.map((item) => (
-          <article
-            key={item.id}
-            className={`flex flex-col gap-1 ${item.role === 'user' ? 'items-end' : 'items-start'}`}
-          >
-            <div className="flex items-center gap-2 text-[11px] text-ink-muted">
-              <span className="font-semibold">{item.role === 'user' ? '我' : '助手'}</span>
-              <span>{item.createdAt}</span>
-            </div>
-            <p
-              className={`max-w-[92%] whitespace-pre-wrap break-words rounded-xl border px-3 py-2 text-sm leading-relaxed ${
-                item.role === 'user'
-                  ? 'border-accent/30 bg-accent-soft text-ink'
-                  : 'border-line bg-panel-muted text-ink'
-              }`}
+        {loading ? (
+          <p className="flex items-center gap-2 text-xs text-ink-muted">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            正在加载会话消息…
+          </p>
+        ) : null}
+
+        {error ? (
+          <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+            加载会话失败：{error}
+          </p>
+        ) : null}
+
+        {messages.map((item) => {
+          const status = item.role === 'assistant' ? item.status : undefined;
+          const asSql = item.role === 'assistant' && item.status === 'COMPLETED' && item.content.trim().length > 0;
+          return (
+            <article
+              key={item.id}
+              className={`flex flex-col gap-1 ${item.role === 'user' ? 'items-end' : 'items-start'}`}
             >
-              {item.content}
-            </p>
-          </article>
-        ))}
+              <div className="flex items-center gap-2 text-[11px] text-ink-muted">
+                <span className="font-semibold">{item.role === 'user' ? '我' : '助手'}</span>
+                <span>{item.createdAt}</span>
+                {status ? (
+                  <span
+                    className={`rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_CLASS[status]}`}
+                  >
+                    {STATUS_LABEL[status]}
+                  </span>
+                ) : null}
+              </div>
+              {asSql ? (
+                <pre className="max-w-[92%] overflow-x-auto whitespace-pre-wrap break-words rounded-xl border border-line bg-panel-muted px-3 py-2 font-mono text-xs leading-relaxed text-ink">
+                  <code>{item.content}</code>
+                </pre>
+              ) : (
+                <p
+                  className={`max-w-[92%] whitespace-pre-wrap break-words rounded-xl border px-3 py-2 text-sm leading-relaxed ${
+                    item.role === 'user'
+                      ? 'border-accent/30 bg-accent-soft text-ink'
+                      : 'border-line bg-panel-muted text-ink'
+                  }`}
+                >
+                  {item.content}
+                </p>
+              )}
+            </article>
+          );
+        })}
 
         {generating ? (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-line bg-panel-muted px-3 py-2 text-xs text-ink-muted">
             <span className="flex items-center gap-2">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" aria-hidden="true" />
-              正在从后端流式接收 SQL…
+              {progressLabel}
             </span>
             <button type="button" className="btn-muted px-2 py-1 text-[11px]" onClick={onCancel}>
               <Square className="h-3 w-3" aria-hidden="true" />

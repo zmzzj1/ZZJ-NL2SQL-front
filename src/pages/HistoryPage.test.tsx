@@ -2,85 +2,131 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { HistoryPage } from './HistoryPage';
+import type { QueryHistoryItem } from '../api/contract';
+import { deleteQueryHistory, fetchQueryHistory, listQueryHistory } from '../api/history';
+import type * as HistoryModule from '../api/history';
 
-function setupClipboard() {
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, 'clipboard', {
-    value: { writeText },
-    configurable: true,
-    writable: true,
+vi.mock('../features/connections/useConnections', () => ({
+  useConnections: () => ({
+    connections: [{ id: 1, name: 'A 商店库', engine: 'mysql', database: 'sql_demo_a' }],
+    loading: false,
+    error: null,
+    reload: vi.fn(),
+  }),
+}));
+
+vi.mock('../api/history', async () => {
+  const actual = await vi.importActual<typeof HistoryModule>('../api/history');
+  return {
+    ...actual,
+    listQueryHistory: vi.fn(),
+    fetchQueryHistory: vi.fn(),
+    deleteQueryHistory: vi.fn(),
+  };
+});
+
+const listMock = vi.mocked(listQueryHistory);
+const fetchMock = vi.mocked(fetchQueryHistory);
+const deleteMock = vi.mocked(deleteQueryHistory);
+
+const NOW = '2026-10-19T06:00:00';
+const SQL = 'SELECT COUNT(*) AS `订单数` FROM shop_orders';
+
+const SUCCESS_RECORD: QueryHistoryItem = {
+  id: 2,
+  runId: null,
+  stepId: null,
+  conversationId: 100,
+  connectionId: 1,
+  connectionName: 'A 商店库',
+  sql: SQL,
+  status: 'SUCCESS',
+  executedAt: NOW,
+  durationMs: 12,
+  rowCount: 1,
+  truncated: false,
+  errorCode: null,
+  errorMessage: null,
+};
+
+const FAILED_RECORD: QueryHistoryItem = {
+  ...SUCCESS_RECORD,
+  id: 1,
+  sql: 'SELECT * FROM no_such_table',
+  status: 'FAILED',
+  rowCount: null,
+  truncated: null,
+  errorCode: 'SQL_EXECUTION_ERROR',
+  errorMessage: 'SQL 执行失败，请检查表名、列名与语法',
+};
+
+function stubList(items: QueryHistoryItem[], nextCursor: string | null = null) {
+  listMock.mockResolvedValue({ items, nextCursor });
+  fetchMock.mockImplementation(async (id: number) => {
+    const matched = items.find((item) => item.id === id);
+    if (!matched) throw new Error(`unexpected history id: ${id}`);
+    return matched;
   });
-  return writeText;
 }
 
-/** AC-15 / AC-16 / AC-17：搜索过滤、详情切换、空状态与复制。 */
-describe('HistoryPage 演示记录', () => {
-  let writeText: ReturnType<typeof setupClipboard>;
-
+describe('HistoryPage 真实查询历史', () => {
   beforeEach(() => {
-    writeText = setupClipboard();
+    vi.clearAllMocks();
+    deleteMock.mockResolvedValue(undefined);
   });
 
-  it('TC-10 关键词搜索能过滤演示记录，无匹配显示空状态', async () => {
+  it('加载后端记录并展示成功状态与执行元数据', async () => {
+    stubList([SUCCESS_RECORD]);
+    render(<HistoryPage fontSize={14} />);
+
+    expect(await screen.findByText('成功')).toBeInTheDocument();
+    expect(screen.getAllByText(/A 商店库/).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('12 ms')).length).toBeGreaterThan(0);
+    expect(fetchMock).toHaveBeenCalledWith(SUCCESS_RECORD.id);
+  });
+
+  it('切换记录时展示失败分类与脱敏错误摘要', async () => {
+    stubList([SUCCESS_RECORD, FAILED_RECORD]);
     const user = userEvent.setup();
     render(<HistoryPage fontSize={14} />);
 
-    await user.type(screen.getByLabelText('搜索演示记录'), '客户');
+    await screen.findByText('成功');
+    await user.click(screen.getByRole('button', { name: /no_such_table/ }));
 
-    expect(screen.getByRole('button', { name: /查询近 30 天新增客户数/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /销量前十的商品分类/ })).toBeNull();
-
-    await user.clear(screen.getByLabelText('搜索演示记录'));
-    await user.type(screen.getByLabelText('搜索演示记录'), 'zzz-not-exist');
-
-    expect(screen.getByText('没有匹配的演示记录')).toBeInTheDocument();
-    expect(screen.getByText(/没有包含「zzz-not-exist」的记录/)).toBeInTheDocument();
+    expect(await screen.findByText('SQL_EXECUTION_ERROR')).toBeInTheDocument();
+    expect(screen.getByText('SQL 执行失败，请检查表名、列名与语法')).toBeInTheDocument();
   });
 
-  it('TC-11 点击记录切换详情内容', async () => {
+  it('按数据源筛选时把 connectionId 传给后端', async () => {
+    stubList([SUCCESS_RECORD]);
     const user = userEvent.setup();
     render(<HistoryPage fontSize={14} />);
 
-    expect(screen.getAllByText(/qry-20240511-01/).length).toBeGreaterThan(0);
+    await screen.findByText('成功');
+    await user.selectOptions(screen.getByLabelText('数据源'), '1');
 
-    await user.click(screen.getByRole('button', { name: /销量前十的商品分类/ }));
-
-    expect(screen.getAllByText(/qry-20240510-01/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/哪十个商品分类的销量最高？/)).toBeInTheDocument();
-    expect(screen.getAllByText(/category_name/).length).toBeGreaterThan(0);
+    expect(listMock).toHaveBeenLastCalledWith({ limit: 20, cursor: null, connectionId: 1 });
   });
 
-  it('TC-17 详情页复制 SQL 写入剪贴板', async () => {
-    const user = userEvent.setup();
-    writeText = setupClipboard();
-    render(<HistoryPage fontSize={14} />);
-
-    await user.click(screen.getByRole('button', { name: /复制 SQL/ }));
-
-    expect(writeText).toHaveBeenCalledTimes(1);
-    expect(writeText.mock.calls[0][0]).toContain('SUM(amount) AS total_amount');
-    expect(screen.getByText('已复制')).toBeInTheDocument();
-  });
-
-  it('重新执行按钮禁用，删除演示记录后有空状态', async () => {
+  it('删除需要二次确认，删除后列表回到空状态', async () => {
+    stubList([SUCCESS_RECORD]);
     const user = userEvent.setup();
     render(<HistoryPage fontSize={14} />);
 
-    expect(screen.getByRole('button', { name: /重新执行（待后端接入）/ })).toBeDisabled();
+    await user.click(await screen.findByRole('button', { name: '删除记录' }));
+    expect(deleteMock).not.toHaveBeenCalled();
 
-    for (const name of [
-      /统计每个月的订单金额/,
-      /查询近 30 天新增客户数/,
-      /销量前十的商品分类/,
-      /未支付订单占比/,
-      /各渠道退款金额汇总/,
-    ]) {
-      await user.click(screen.getByRole('button', { name }));
-      await user.click(screen.getByRole('button', { name: /移除该演示记录/ }));
-    }
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
 
-    expect(screen.getByText('演示记录为空')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /恢复演示数据/ }));
-    expect(screen.getByRole('button', { name: /统计每个月的订单金额/ })).toBeInTheDocument();
+    expect(deleteMock).toHaveBeenCalledWith(SUCCESS_RECORD.id);
+    expect(await screen.findByText('还没有真实查询记录')).toBeInTheDocument();
+  });
+
+  it('没有记录时展示真实空状态而不是演示数据', async () => {
+    stubList([]);
+    render(<HistoryPage fontSize={14} />);
+
+    expect(await screen.findByText('还没有真实查询记录')).toBeInTheDocument();
+    expect(screen.queryByText(/演示/)).not.toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { Database, History as HistoryIcon, LayoutDashboard, Settings } from 'lucide-react';
+import { BookOpen, Database, History as HistoryIcon, LayoutDashboard, Settings } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { WorkspacePageKey } from '../../types';
 
@@ -26,8 +26,14 @@ export const workspaceNavItems: NavItem[] = [
   {
     key: 'history',
     label: '历史记录',
-    description: '演示查询记录',
+    description: '真实查询记录',
     icon: HistoryIcon,
+  },
+  {
+    key: 'knowledge',
+    label: '业务知识',
+    description: '术语与 SQL 示例',
+    icon: BookOpen,
   },
   {
     key: 'settings',

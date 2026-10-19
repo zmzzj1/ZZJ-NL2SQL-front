@@ -42,4 +42,6 @@ docs/structure-decision.md
 docs/P0-FB01-acceptance.md
 docs/*-acceptance.md
 docs/*-development-guide*.md
+docs/*-api-contract.md
+docs/*-design-notes.md
 docs/evidence/

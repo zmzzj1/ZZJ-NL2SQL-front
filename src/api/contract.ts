@@ -10,6 +10,13 @@ export type ErrorCode =
   | 'DUPLICATE_EMAIL'
   | 'CONNECTION_NOT_FOUND'
   | 'CONNECTION_FAILED'
+  | 'CONVERSATION_NOT_FOUND'
+  | 'HISTORY_NOT_FOUND'
+  | 'AGENT_RUN_NOT_FOUND'
+  | 'AGENT_STEP_NOT_FOUND'
+  | 'AGENT_STATE_CONFLICT'
+  | 'AGENT_PLAN_INVALID'
+  | 'AGENT_STEP_FAILED'
   | 'SQL_NOT_ALLOWED'
   | 'SQL_EXECUTION_ERROR'
   | 'MODEL_NOT_CONFIGURED'
@@ -94,7 +101,156 @@ export interface SchemaResponse {
 export interface GenerateSqlRequest {
   userInput: string;
   connectionId: number;
+  /** 可选：绑定到已授权的会话。 */
+  conversationId?: number | null;
   strategyName: 'default';
+}
+
+export type MessageRole = 'USER' | 'ASSISTANT';
+export type MessageStatus = 'IN_PROGRESS' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+export type QueryStatus = 'SUCCESS' | 'FAILED';
+
+export interface ConversationSummary {
+  id: number;
+  title: string;
+  connectionId: number | null;
+  connectionName: string;
+  createdAt: string;
+  lastActivityAt: string;
+}
+
+export interface ConversationMessage {
+  id: number;
+  role: MessageRole;
+  content: string;
+  status: MessageStatus;
+  createdAt: string;
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  messages: ConversationMessage[];
+  /** 消息超过服务端上限时只返回最近部分。 */
+  messagesTruncated: boolean;
+}
+
+export interface CreateConversationRequest {
+  connectionId: number;
+  title?: string;
+}
+
+/** 游标分页：nextCursor 为 null 表示没有更多。 */
+export interface PageResponse<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+export type KnowledgeType = 'GLOSSARY' | 'VERIFIED_SQL_EXAMPLE';
+
+export interface KnowledgeEntry {
+  id: number;
+  sourceType: KnowledgeType;
+  title: string;
+  content: string;
+  connectionId: number | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeEntryInput {
+  sourceType: KnowledgeType;
+  title: string;
+  content: string;
+  connectionId?: number | null;
+}
+
+export interface KnowledgeHit {
+  id: number;
+  sourceType: KnowledgeType;
+  title: string;
+  version: number;
+  score: number;
+  snippet: string;
+}
+
+export interface KnowledgeSearchResponse {
+  items: KnowledgeHit[];
+  retrievalMode: string;
+}
+
+export interface QueryHistoryItem {
+  id: number;
+  runId: number | null;
+  stepId: number | null;
+  conversationId: number | null;
+  connectionId: number | null;
+  connectionName: string;
+  sql: string;
+  status: QueryStatus;
+  executedAt: string;
+  durationMs: number;
+  rowCount: number | null;
+  truncated: boolean | null;
+  errorCode: ErrorCode | null;
+  errorMessage: string | null;
+}
+
+export type AgentRunStatus =
+  'PLANNING' | 'WAITING_APPROVAL' | 'RUNNING' | 'CLARIFYING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+
+export type AgentRoute = 'CHITCHAT' | 'CLARIFY' | 'KNOWLEDGE' | 'SIMPLE' | 'COMPLEX';
+
+export interface RoleActivity {
+  role: string;
+  status: string;
+}
+
+export interface KnowledgeSourceRef {
+  id: number;
+  sourceType: string;
+  title: string;
+  version: number;
+}
+
+export type AgentStepStatus = 'PENDING' | 'WAITING_APPROVAL' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED';
+
+export type AgentApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export interface AgentStep {
+  id: number;
+  sequence: number;
+  objective: string;
+  dependsOn: number | null;
+  status: AgentStepStatus;
+  sql: string | null;
+  sqlVersion: number;
+  agentRole: string | null;
+  approvalStatus: AgentApprovalStatus;
+  repairCount: number;
+  rowCount: number | null;
+  truncated: boolean | null;
+  errorCode: ErrorCode | null;
+  errorMessage: string | null;
+  resultSummary: string | null;
+}
+
+export interface AgentRun {
+  id: number;
+  conversationId: number;
+  connectionId: number | null;
+  connectionName: string;
+  question: string;
+  status: AgentRunStatus;
+  route: AgentRoute | null;
+  roleActivities: RoleActivity[];
+  knowledgeSources: KnowledgeSourceRef[];
+  llmCallCount: number;
+  summary: string | null;
+  errorCode: ErrorCode | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+  steps: AgentStep[];
 }
 
 export interface StartEventData {

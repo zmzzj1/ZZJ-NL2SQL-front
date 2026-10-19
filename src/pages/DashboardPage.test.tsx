@@ -3,10 +3,12 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DashboardPage } from './DashboardPage';
 import { listConnections } from '../api/connections';
-import type { Connection } from '../api/contract';
+import { createConversation, fetchConversation, listConversations } from '../api/conversations';
+import type { Connection, ConversationDetail, ConversationSummary } from '../api/contract';
 import { ApiError } from '../api/http';
 import { executeSql, streamSqlGeneration } from '../api/sql';
 import type * as ConnectionsModule from '../api/connections';
+import type * as ConversationsModule from '../api/conversations';
 import type * as SqlModule from '../api/sql';
 
 vi.mock('../api/connections', async () => {
@@ -16,6 +18,26 @@ vi.mock('../api/connections', async () => {
     listConnections: vi.fn(),
   };
 });
+
+vi.mock('../api/conversations', async () => {
+  const actual = await vi.importActual<typeof ConversationsModule>('../api/conversations');
+  return {
+    ...actual,
+    listConversations: vi.fn(),
+    createConversation: vi.fn(),
+    fetchConversation: vi.fn(),
+    deleteConversation: vi.fn(),
+  };
+});
+
+vi.mock('../api/agent', () => ({
+  streamAgentRun: vi.fn(),
+  approveAgentStep: vi.fn(),
+  rejectAgentStep: vi.fn(),
+  cancelAgentRun: vi.fn(),
+  fetchAgentRun: vi.fn(),
+  fetchLatestAgentRun: vi.fn().mockResolvedValue(null),
+}));
 
 vi.mock('../api/sql', async () => {
   const actual = await vi.importActual<typeof SqlModule>('../api/sql');
@@ -29,6 +51,11 @@ vi.mock('../api/sql', async () => {
 const streamMock = vi.mocked(streamSqlGeneration);
 const executeMock = vi.mocked(executeSql);
 const listMock = vi.mocked(listConnections);
+const listConversationsMock = vi.mocked(listConversations);
+const createConversationMock = vi.mocked(createConversation);
+const fetchConversationMock = vi.mocked(fetchConversation);
+
+const NOW = '2026-10-19T06:00:00';
 
 const CONNECTION_A: Connection = {
   id: 1,
@@ -52,6 +79,15 @@ const CONNECTION_B: Connection = {
 const QUESTION = '统计订单数量';
 const SQL = 'SELECT COUNT(*) AS `订单数` FROM shop_orders';
 
+const CONVERSATION: ConversationSummary = {
+  id: 100,
+  title: QUESTION,
+  connectionId: 1,
+  connectionName: 'A 商店库',
+  createdAt: NOW,
+  lastActivityAt: NOW,
+};
+
 function emitFullStream(sql = SQL) {
   streamMock.mockImplementation(async (_request, handlers) => {
     handlers.onStart?.('req-test');
@@ -61,8 +97,10 @@ function emitFullStream(sql = SQL) {
   });
 }
 
-async function renderPage(connections: Connection[] = [CONNECTION_A]) {
+async function renderPage(connections: Connection[] = [CONNECTION_A], conversationItems: ConversationSummary[] = []) {
   listMock.mockResolvedValue(connections);
+  listConversationsMock.mockResolvedValue({ items: conversationItems, nextCursor: null });
+  createConversationMock.mockResolvedValue(CONVERSATION);
   const user = userEvent.setup();
   render(<DashboardPage fontSize={14} onGoToDatabase={vi.fn()} />);
   await screen.findByLabelText('数据源');
@@ -72,6 +110,11 @@ async function renderPage(connections: Connection[] = [CONNECTION_A]) {
 describe('DashboardPage 真实工作台链路', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fetchConversationMock.mockResolvedValue({
+      ...CONVERSATION,
+      messages: [],
+      messagesTruncated: false,
+    } satisfies ConversationDetail);
   });
 
   it('空白输入不允许发送', async () => {
@@ -81,23 +124,24 @@ describe('DashboardPage 真实工作台链路', () => {
     expect(screen.getByRole('button', { name: /发送/ })).toBeDisabled();
   });
 
-  it('发送时携带当前 connectionId，并按 delta 展示 SQL', async () => {
+  it('首次提问先创建会话，再携带 connectionId 与 conversationId 流式生成', async () => {
     emitFullStream();
     const user = await renderPage();
 
     await user.type(screen.getByLabelText('提问内容'), QUESTION);
     await user.click(screen.getByRole('button', { name: /发送/ }));
 
-    expect(await screen.findByText(SQL)).toBeInTheDocument();
+    expect(await screen.findAllByText(SQL)).not.toHaveLength(0);
+    expect(createConversationMock).toHaveBeenCalledWith({ connectionId: 1, title: QUESTION });
     expect(streamMock).toHaveBeenCalledWith(
-      { userInput: QUESTION, connectionId: 1, strategyName: 'default' },
+      { userInput: QUESTION, connectionId: 1, conversationId: 100, strategyName: 'default' },
       expect.any(Object),
       expect.any(AbortSignal),
     );
     expect(screen.getByRole('button', { name: /执行查询/ })).toBeEnabled();
   });
 
-  it('执行时使用同一个 connectionId 并渲染真实结果', async () => {
+  it('执行时使用同一个 connectionId 与 conversationId 并渲染真实结果', async () => {
     emitFullStream();
     executeMock.mockResolvedValue({
       columns: ['订单数'],
@@ -109,12 +153,12 @@ describe('DashboardPage 真实工作台链路', () => {
 
     await user.type(screen.getByLabelText('提问内容'), QUESTION);
     await user.click(screen.getByRole('button', { name: /发送/ }));
-    await screen.findByText(SQL);
+    await screen.findAllByText(SQL);
     await user.click(screen.getByRole('button', { name: /执行查询/ }));
 
     expect(await screen.findByText('真实查询')).toBeInTheDocument();
     expect(screen.getByRole('cell', { name: '3' })).toBeInTheDocument();
-    expect(executeMock).toHaveBeenCalledWith(1, SQL);
+    expect(executeMock).toHaveBeenCalledWith(1, SQL, 100);
   });
 
   it('空结果集展示零行状态', async () => {
@@ -124,7 +168,7 @@ describe('DashboardPage 真实工作台链路', () => {
 
     await user.type(screen.getByLabelText('提问内容'), QUESTION);
     await user.click(screen.getByRole('button', { name: /发送/ }));
-    await screen.findByText(SQL);
+    await screen.findAllByText(SQL);
     await user.click(screen.getByRole('button', { name: /执行查询/ }));
 
     expect(await screen.findByText('查询成功，返回 0 行')).toBeInTheDocument();
@@ -137,13 +181,13 @@ describe('DashboardPage 真实工作台链路', () => {
 
     await user.type(screen.getByLabelText('提问内容'), QUESTION);
     await user.click(screen.getByRole('button', { name: /发送/ }));
-    await screen.findByText(SQL);
+    await screen.findAllByText(SQL);
     await user.click(screen.getByRole('button', { name: /执行查询/ }));
 
     expect(await screen.findByText(/只允许只读 SELECT 查询/)).toBeInTheDocument();
   });
 
-  it('取消生成后清空部分 SQL', async () => {
+  it('取消生成后清空部分 SQL 并标记已取消', async () => {
     streamMock.mockImplementation(
       (_request, handlers, signal) =>
         new Promise<void>((_resolve, reject) => {
@@ -159,11 +203,11 @@ describe('DashboardPage 真实工作台链路', () => {
     await screen.findByText(/正在从后端流式接收 SQL/);
     await user.click(screen.getByRole('button', { name: /取消生成/ }));
 
-    expect(await screen.findByText('已取消本次 SQL 生成。')).toBeInTheDocument();
+    expect(await screen.findByText('已取消')).toBeInTheDocument();
     expect(screen.getByText('还没有 SQL')).toBeInTheDocument();
   });
 
-  it('切换数据源会取消旧流并清空旧 SQL', async () => {
+  it('切换数据源会取消旧流、清空旧 SQL 并开始新会话', async () => {
     const signals: AbortSignal[] = [];
     streamMock.mockImplementation((_request, handlers, signal) => {
       signals.push(signal);
@@ -181,10 +225,28 @@ describe('DashboardPage 真实工作台链路', () => {
 
     await user.selectOptions(screen.getByLabelText('数据源'), '2');
 
-    expect(await screen.findByText(/已切换数据源/)).toBeInTheDocument();
     expect(signals[0]?.aborted).toBe(true);
     expect(screen.queryByText(/SELECT FROM shop_orders/)).not.toBeInTheDocument();
     expect(screen.getByText('还没有 SQL')).toBeInTheDocument();
+    expect(screen.getByLabelText('会话')).toHaveValue('');
+  });
+
+  it('选择历史会话时从服务端恢复消息', async () => {
+    fetchConversationMock.mockResolvedValue({
+      ...CONVERSATION,
+      messages: [
+        { id: 1, role: 'USER', content: QUESTION, status: 'COMPLETED', createdAt: NOW },
+        { id: 2, role: 'ASSISTANT', content: SQL, status: 'COMPLETED', createdAt: NOW },
+      ],
+      messagesTruncated: false,
+    });
+    const user = await renderPage([CONNECTION_A], [CONVERSATION]);
+
+    await user.selectOptions(screen.getByLabelText('会话'), '100');
+
+    expect(await screen.findByText(QUESTION, { selector: 'p' })).toBeInTheDocument();
+    expect(fetchConversationMock).toHaveBeenCalledWith(100);
+    expect(screen.getByLabelText('会话')).toHaveValue('100');
   });
 
   it('模型未配置时显示明确原因，执行按钮保持禁用', async () => {

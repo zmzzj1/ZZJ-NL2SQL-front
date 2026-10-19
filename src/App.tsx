@@ -4,6 +4,7 @@ import { AppShell } from './components/layout/AppShell';
 import { DashboardPage } from './pages/DashboardPage';
 import { DatabasePage } from './pages/DatabasePage';
 import { HistoryPage } from './pages/HistoryPage';
+import { KnowledgePage } from './pages/KnowledgePage';
 import { LoginPage } from './pages/LoginPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { useAuth } from './hooks/useAuth';
@@ -52,6 +53,7 @@ export default function App() {
       ) : null}
       {page === 'database' ? <DatabasePage /> : null}
       {page === 'history' ? <HistoryPage fontSize={preferences.editorFontSize} /> : null}
+      {page === 'knowledge' ? <KnowledgePage /> : null}
       {page === 'settings' ? (
         <SettingsPage
           preferences={preferences}

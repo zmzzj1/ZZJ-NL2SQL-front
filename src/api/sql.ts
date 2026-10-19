@@ -124,10 +124,22 @@ export async function streamSqlGeneration(
   }
 }
 
-export async function executeSql(connectionId: number, sql: string, signal?: AbortSignal): Promise<ExecutionResult> {
+/** 取消生成：按 requestId 幂等收敛服务端消息状态，重复调用无副作用。 */
+export async function cancelSqlGeneration(requestId: string): Promise<void> {
+  await requestJson<void>(`/v1/sql/generate/${encodeURIComponent(requestId)}/cancel`, {
+    method: 'POST',
+  });
+}
+
+export async function executeSql(
+  connectionId: number,
+  sql: string,
+  conversationId?: number | null,
+  signal?: AbortSignal,
+): Promise<ExecutionResult> {
   const result = await requestJson<ExecutionResult>('/v1/sql/execute', {
     method: 'POST',
-    body: JSON.stringify({ connectionId, sql }),
+    body: JSON.stringify({ connectionId, sql, conversationId: conversationId ?? null }),
     signal,
   });
   if (!Array.isArray(result.columns) || !Array.isArray(result.rows)) {

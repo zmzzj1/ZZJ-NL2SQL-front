@@ -24,6 +24,7 @@ export function DatabasePage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null);
   const [schema, setSchema] = useState<SchemaResponse | null>(null);
@@ -72,6 +73,7 @@ export function DatabasePage() {
     setTestResult(null);
     setSchema(null);
     setSchemaError('');
+    setConfirmDelete(false);
   };
 
   const selectConnection = (connection: Connection) => {
@@ -79,6 +81,7 @@ export function DatabasePage() {
     setSelectedId(connection.id);
     setFeedback(null);
     setTestResult(null);
+    setConfirmDelete(false);
   };
 
   const saveConnection = async (input: ConnectionInput) => {
@@ -116,12 +119,17 @@ export function DatabasePage() {
 
   const deleteSelected = async () => {
     if (!selected) return;
-    if (!window.confirm(`确定删除连接「${selected.name}」？该操作不可撤销。`)) return;
+    // 用两段式确认替代 window.confirm：内嵌预览面板会静默拦截原生确认框。
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
     setDeleting(true);
     setFeedback(null);
     try {
       await remove(selected.id);
       setSelectedId(null);
+      setConfirmDelete(false);
       setSchema(null);
       setTestResult(null);
       setFeedback({ tone: 'info', message: `已删除连接「${selected.name}」` });
@@ -168,10 +176,16 @@ export function DatabasePage() {
               onSave={saveConnection}
               onTest={testSelected}
               onDelete={deleteSelected}
+              confirmDelete={confirmDelete}
             />
           ) : (
             <section className="card p-6 text-sm text-ink-muted">
               选择左侧连接查看详情，或点击「新增」创建第一个 MySQL 数据源。
+              {feedback ? (
+                <p role="status" className={`mt-3 text-xs ${feedback.tone === 'error' ? 'text-danger' : 'text-ink'}`}>
+                  {feedback.message}
+                </p>
+              ) : null}
             </section>
           )}
 

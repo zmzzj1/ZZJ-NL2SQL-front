@@ -1,6 +1,6 @@
 # QueryForge 前端（真实用户与多数据源 SQL 工作台）
 
-React 18 + TypeScript + Vite 6 + Tailwind CSS 4。完成 P2 C5–C9：真实身份、MySQL 连接管理、Schema 浏览、按数据源生成与执行 SQL。
+React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）。
 
 ## 已实现
 
@@ -9,9 +9,11 @@ React 18 + TypeScript + Vite 6 + Tailwind CSS 4。完成 P2 C5–C9：真实身�
 | 注册/登录/退出/会话恢复 | 真实：服务端 Session + HttpOnly Cookie + CSRF |
 | 数据库连接管理 | 真实：CRUD、连通性测试、密码加密保存、归属隔离 |
 | Schema 浏览 | 真实：JDBC 元数据读取表/列/类型，可刷新 |
-| Dashboard | 真实：选择数据源、按连接生成 SQL、显式执行、真实结果表 |
+| Dashboard | 真实：会话切换、单次 SQL 与 Agent 多步模式、显式执行、真实结果表 |
 | 切换数据源 | 取消旧 SSE、清空旧 SQL/结果，生成与执行共用 connectionId |
-| 历史记录 | 演示数据（页面明确标注） |
+| 会话与历史 | 真实：会话恢复/删除，查询历史筛选、详情与删除 |
+| Agent | 真实接口：规划时间线、逐步确认/拒绝、取消与运行恢复 |
+| 业务知识 | 真实：术语/SQL 示例 CRUD、按连接关键词检索预览 |
 | 设置 | 本地主题与 SQL 字号 |
 
 ## 环境要求
@@ -46,7 +48,7 @@ npm run build
 npm run check   # 五项串联
 ```
 
-当前基线：9 个测试文件、46 个用例，lint 0 error / 0 warning。
+当前基线：10 个测试文件、51 个用例，lint 0 error / 0 warning；生产构建通过。
 
 ## 接口
 
@@ -61,8 +63,13 @@ npm run check   # 五项串联
 | PATCH/DELETE | `/api/v1/connections/{id}` | 修改/删除 |
 | POST | `/api/v1/connections/{id}/test` | 真实连接测试 |
 | GET | `/api/v1/connections/{id}/schema` | 真实表结构 |
-| POST | `/api/v1/sql/generate/stream` | SSE：`{userInput,connectionId,strategyName}` |
-| POST | `/api/v1/sql/execute` | 只读执行：`{connectionId,sql}` |
+| GET/POST | `/api/v1/conversations` | 会话列表/新建 |
+| GET/DELETE | `/api/v1/conversations/{id}` | 会话详情/删除 |
+| GET/DELETE | `/api/v1/query-history[/{id}]` | 查询历史列表、详情与删除 |
+| POST | `/api/v1/sql/generate/stream` | 按会话和数据源流式生成 SQL |
+| POST | `/api/v1/sql/execute` | 按会话和数据源执行只读 SQL |
+| POST/GET | `/api/v1/agent/runs/**` | Agent 运行、确认、拒绝、取消与恢复 |
+| POST/GET/PUT/DELETE | `/api/v1/knowledge/**` | 业务知识维护与检索 |
 
 错误体统一 `{code,message,requestId}`；前端按 `code` 展示文案。
 
@@ -70,17 +77,12 @@ npm run check   # 五项串联
 
 ```text
 src/
-├── api/                      # 契约、CSRF/Session 客户端、SSE 解析
-├── features/sql-workspace/   # 工作台状态机与展示
+├── api/                      # 契约、认证、业务接口、HTTP/SSE 客户端
+├── features/agent/           # Agent 运行状态与时间线
 ├── features/connections/     # 连接列表/表单/Schema
+├── features/conversations/   # 会话列表与操作
+├── features/sql-workspace/   # SQL 工作台状态机与展示
 ├── hooks/                    # useAuth、健康检查、偏好
 ├── pages/                    # 五个页面组合
-└── mocks/                    # 仅 History 演示数据
+└── mocks/                    # 设置页使用的静态 SQL 示例
 ```
-
-## 已知限制
-
-- 仅支持 MySQL 连接；PostgreSQL 明确标注暂不支持。
-- 历史记录仍为演示数据。
-- 真实模型未验证（无 Key）；无 Key 时生成接口返回 `MODEL_NOT_CONFIGURED`。
-- Session 存服务端内存，后端重启需重新登录；连接配置已持久化。

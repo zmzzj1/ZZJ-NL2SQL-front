@@ -156,6 +156,7 @@ describe('executeSql', () => {
     const call = fetchMock.mock.calls.find(([url]) => String(url).includes('/sql/execute'));
     expect(JSON.parse(String((call?.[1] as RequestInit).body))).toEqual({
       connectionId: 1,
+      conversationId: null,
       sql: 'SELECT COUNT(*) AS `订单数` FROM shop_orders',
     });
   });

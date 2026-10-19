@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Database, Loader2, RefreshCw, Settings2 } from 'lucide-react';
+import { Database, Loader2, Plus, RefreshCw, Settings2, Trash2 } from 'lucide-react';
+import { ApiError, describeError } from '../api/http';
 import { EmptyState } from '../components/ui/EmptyState';
+import { AgentTimeline } from '../features/agent/AgentTimeline';
+import { useAgentRun } from '../features/agent/useAgentRun';
 import { useConnections } from '../features/connections/useConnections';
+import { useConversations } from '../features/conversations/useConversations';
 import { ChatPanel } from '../features/sql-workspace/ChatPanel';
 import { ResultPanel } from '../features/sql-workspace/ResultPanel';
 import { SqlPanel } from '../features/sql-workspace/SqlPanel';
@@ -12,14 +16,38 @@ interface DashboardPageProps {
   onGoToDatabase: () => void;
 }
 
+function formatActivity(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 /**
- * SQL 工作台页面：选择真实数据源后，生成/执行都绑定同一个 connectionId。
+ * SQL 工作台页面：会话与数据源共同决定生成/执行上下文。
+ * 切换数据源会开启新会话；切换会话会同步其绑定的数据源。
  */
 export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) {
   const { connections, loading, error, reload } = useConnections();
+  const conversations = useConversations();
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [conversationId, setConversationId] = useState<number | null>(null);
+  const [conversationError, setConversationError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [mode, setMode] = useState<'single' | 'agent'>('single');
+
+  const activeConversation = conversations.items.find((item) => item.id === conversationId) ?? null;
+  const connectionMissing =
+    activeConversation !== null &&
+    (activeConversation.connectionId === null ||
+      !connections.some((item) => item.id === activeConversation.connectionId));
 
   useEffect(() => {
+    if (connectionMissing) return;
     if (connections.length === 0) {
       setSelectedId(null);
       return;
@@ -27,10 +55,94 @@ export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) 
     if (!selectedId || !connections.some((item) => item.id === selectedId)) {
       setSelectedId(connections[0].id);
     }
-  }, [connections, selectedId]);
+  }, [connections, selectedId, connectionMissing]);
+
+  useEffect(() => {
+    setConfirmDelete(false);
+  }, [conversationId]);
 
   const selected = connections.find((item) => item.id === selectedId) ?? null;
-  const workspace = useSqlWorkspace(selectedId);
+
+  const workspace = useSqlWorkspace({
+    connectionId: selectedId,
+    conversationId,
+    readOnly: connectionMissing,
+    ensureConversation: async (question) => {
+      if (selectedId === null) {
+        throw new ApiError('CONNECTION_NOT_FOUND', '请先选择数据源', 400);
+      }
+      const created = await conversations.create(selectedId, question.slice(0, 60));
+      return created.id;
+    },
+    onConversationCreated: setConversationId,
+    onGenerationSettled: () => {
+      void conversations.reload();
+    },
+  });
+
+  const agent = useAgentRun({
+    conversationId,
+    connectionId: selectedId,
+    onSettled: () => {
+      void workspace.reloadMessages();
+      void conversations.reload();
+    },
+  });
+
+  const startNewConversation = () => {
+    workspace.startNewConversation();
+    setConversationId(null);
+    setConversationError(null);
+  };
+
+  const handleAgentSend = async () => {
+    const question = workspace.input.trim();
+    if (!question || selectedId === null || agent.streaming || connectionMissing) return;
+    workspace.setInput('');
+    if (conversationId === null) {
+      try {
+        const created = await conversations.create(selectedId, question.slice(0, 60));
+        await agent.start(question, { conversationId: created.id, onCreated: setConversationId });
+      } catch (sendError) {
+        setConversationError(describeError(sendError));
+      }
+      return;
+    }
+    await agent.start(question);
+  };
+
+  const handleConnectionChange = (value: string) => {
+    setSelectedId(Number(value));
+    startNewConversation();
+  };
+
+  const handleConversationChange = (value: string) => {
+    setConversationError(null);
+    if (!value) {
+      startNewConversation();
+      return;
+    }
+    const target = conversations.items.find((item) => String(item.id) === value);
+    if (!target) return;
+    setConversationId(target.id);
+    if (target.connectionId !== null && connections.some((item) => item.id === target.connectionId)) {
+      setSelectedId(target.connectionId);
+    }
+  };
+
+  const handleDeleteConversation = async () => {
+    if (conversationId === null) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    try {
+      await conversations.remove(conversationId);
+      startNewConversation();
+    } catch (deleteError) {
+      setConversationError(describeError(deleteError));
+    }
+  };
 
   if (loading && connections.length === 0) {
     return (
@@ -85,7 +197,7 @@ export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) 
           id="dashboard-connection"
           className="input-field max-w-[280px] py-1.5"
           value={selectedId ?? ''}
-          onChange={(event) => setSelectedId(Number(event.target.value))}
+          onChange={(event) => handleConnectionChange(event.target.value)}
         >
           {connections.map((connection) => (
             <option key={connection.id} value={connection.id}>
@@ -115,9 +227,96 @@ export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) 
         </div>
       </section>
 
+      <section
+        aria-label="会话选择"
+        className="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-panel px-4 py-2.5"
+      >
+        <div className="flex items-center gap-1 rounded-lg border border-line p-0.5" role="group" aria-label="查询模式">
+          <button
+            type="button"
+            className={`px-2 py-1 text-xs ${mode === 'single' ? 'btn-primary' : 'btn-muted'}`}
+            onClick={() => setMode('single')}
+            disabled={workspace.generation.status === 'streaming' || agent.streaming}
+            aria-pressed={mode === 'single'}
+          >
+            单步 SQL
+          </button>
+          <button
+            type="button"
+            className={`px-2 py-1 text-xs ${mode === 'agent' ? 'btn-primary' : 'btn-muted'}`}
+            onClick={() => setMode('agent')}
+            disabled={workspace.generation.status === 'streaming' || agent.streaming}
+            aria-pressed={mode === 'agent'}
+          >
+            Agent 多步
+          </button>
+        </div>
+        <label htmlFor="dashboard-conversation" className="text-xs font-semibold text-ink-muted">
+          会话
+        </label>
+        <select
+          id="dashboard-conversation"
+          className="input-field max-w-[320px] py-1.5"
+          value={conversationId ?? ''}
+          onChange={(event) => handleConversationChange(event.target.value)}
+          disabled={conversations.loading && conversations.items.length === 0}
+        >
+          <option value="">新会话（首次提问时创建）</option>
+          {conversations.items.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.title} · {item.connectionName}
+            </option>
+          ))}
+        </select>
+        {activeConversation ? (
+          <span className="text-[11px] text-ink-muted">
+            最近活动 {formatActivity(activeConversation.lastActivityAt)}
+          </span>
+        ) : (
+          <span className="text-[11px] text-ink-muted">提问后自动创建并持久化</span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {conversations.nextCursor ? (
+            <button
+              type="button"
+              className="btn-muted px-2 py-1 text-xs"
+              onClick={() => void conversations.loadMore()}
+              disabled={conversations.loading}
+            >
+              加载更多
+            </button>
+          ) : null}
+          <button type="button" className="btn-secondary px-2 py-1 text-xs" onClick={startNewConversation}>
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            新建会话
+          </button>
+          <button
+            type="button"
+            className={`btn-secondary px-2 py-1 text-xs ${confirmDelete ? 'text-danger' : ''}`}
+            onClick={() => void handleDeleteConversation()}
+            disabled={conversationId === null}
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            {confirmDelete ? '确认删除' : '删除会话'}
+          </button>
+        </div>
+      </section>
+
       {error ? (
         <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
           {error}
+        </p>
+      ) : null}
+
+      {conversationError ? (
+        <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+          {conversationError}
+        </p>
+      ) : null}
+
+      {connectionMissing ? (
+        <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+          该会话关联的数据源已被删除，只能查看历史消息；如需继续查询，请新建会话并选择有效数据源。
         </p>
       ) : null}
 
@@ -125,33 +324,56 @@ export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) 
         <ChatPanel
           messages={workspace.messages}
           input={workspace.input}
-          generating={workspace.generation.status === 'streaming'}
-          canSend={workspace.canSend}
+          generating={mode === 'agent' ? agent.streaming : workspace.generation.status === 'streaming'}
+          loading={workspace.loadingMessages}
+          error={workspace.messagesError}
+          progressLabel={mode === 'agent' ? 'Agent 正在规划并生成 SQL…' : undefined}
+          canSend={
+            mode === 'agent'
+              ? workspace.input.trim().length > 0 && selectedId !== null && !agent.streaming && !connectionMissing
+              : workspace.canSend
+          }
           onInputChange={workspace.setInput}
-          onSend={workspace.sendMessage}
-          onCancel={workspace.cancelGeneration}
-          onClear={workspace.clearAll}
+          onSend={mode === 'agent' ? () => void handleAgentSend() : workspace.sendMessage}
+          onCancel={mode === 'agent' ? () => void agent.cancel() : workspace.cancelGeneration}
+          onClear={startNewConversation}
         />
 
         <section
           aria-label="SQL 与结果预览"
           className="flex min-w-0 flex-col gap-4 lg:h-full lg:w-[58%] lg:overflow-y-auto"
         >
-          <SqlPanel
-            generation={workspace.generation}
-            canExecute={workspace.canExecute}
-            executing={workspace.execution.status === 'running'}
-            sqlLooksReadOnly={workspace.sqlLooksReadOnly}
-            canRetry={workspace.canRetryGeneration}
-            fontSize={fontSize}
-            onExecute={() => void workspace.runQuery()}
-            onRetry={workspace.retryGeneration}
-          />
-          <ResultPanel execution={workspace.execution} onRetry={() => void workspace.runQuery()} />
+          {mode === 'agent' ? (
+            <AgentTimeline
+              run={agent.run}
+              loading={agent.loading}
+              streaming={agent.streaming}
+              error={agent.error}
+              onApprove={(step) => void agent.approve(step)}
+              onReject={(step) => void agent.reject(step)}
+              onCancel={() => void agent.cancel()}
+              onReload={() => void agent.reload()}
+            />
+          ) : (
+            <>
+              <SqlPanel
+                generation={workspace.generation}
+                canExecute={workspace.canExecute}
+                executing={workspace.execution.status === 'running'}
+                sqlLooksReadOnly={workspace.sqlLooksReadOnly}
+                canRetry={workspace.canRetryGeneration}
+                fontSize={fontSize}
+                onExecute={() => void workspace.runQuery()}
+                onRetry={workspace.retryGeneration}
+              />
+              <ResultPanel execution={workspace.execution} onRetry={() => void workspace.runQuery()} />
+            </>
+          )}
 
           <p className="rounded-xl border border-line bg-panel-muted px-4 py-3 text-[11px] leading-relaxed text-ink-muted">
             当前数据源：<span className="font-mono">{selected?.database}</span> · 只读账号查询 · 模型输出不会自动执行 ·
-            界面不展示连接密码或模型密钥。
+            会话与查询历史保存在管理库，不保存结果行、连接密码或模型密钥。
+            {mode === 'agent' ? ' Agent 每一步 SQL 都需要你确认后才会执行。' : ''}
           </p>
         </section>
       </div>

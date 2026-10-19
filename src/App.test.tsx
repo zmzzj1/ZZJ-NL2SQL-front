@@ -23,6 +23,28 @@ vi.mock('./hooks/useBackendHealth', () => ({
   useBackendHealth: () => ({ status: 'offline', checkedAt: null, recheck: () => {} }),
 }));
 
+vi.mock('./api/history', () => ({
+  listQueryHistory: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+  fetchQueryHistory: vi.fn(),
+  deleteQueryHistory: vi.fn(),
+}));
+
+vi.mock('./api/agent', () => ({
+  fetchLatestAgentRun: vi.fn().mockResolvedValue(null),
+  streamAgentRun: vi.fn(),
+  approveAgentStep: vi.fn(),
+  rejectAgentStep: vi.fn(),
+  cancelAgentRun: vi.fn(),
+  fetchAgentRun: vi.fn(),
+}));
+
+vi.mock('./api/conversations', () => ({
+  listConversations: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
+  createConversation: vi.fn(),
+  fetchConversation: vi.fn(),
+  deleteConversation: vi.fn(),
+}));
+
 vi.mock('./api/connections', async () => {
   const actual = await vi.importActual<typeof ConnectionsModule>('./api/connections');
   return {
@@ -66,7 +88,7 @@ describe('App 外壳与真实会话', () => {
     await screen.findByLabelText('主导航');
     const expectations = [
       { name: /数据库连接/, content: /我的连接/ },
-      { name: /历史记录/, content: /演示记录/ },
+      { name: /历史记录/, content: /真实记录/ },
       { name: /设置 本地界面偏好/, content: /外观主题/ },
       { name: /工作台/, content: /提问/ },
     ];

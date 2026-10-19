@@ -162,12 +162,15 @@ describe('DatabasePage 真实连接管理', () => {
     expect(await screen.findByRole('button', { name: /新库/ })).toBeInTheDocument();
   });
 
-  it('删除连接需要确认并调用 DELETE', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('删除连接需要两次点击确认并调用 DELETE', async () => {
     const user = await renderPage();
     deleteMock.mockResolvedValue(undefined);
 
     await user.click(screen.getByRole('button', { name: '删除' }));
+    expect(deleteMock).not.toHaveBeenCalled();
+    expect(screen.getByText(/再次点击「确认删除」/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
 
     expect(deleteMock).toHaveBeenCalledWith(1);
     expect(await screen.findByText(/已删除连接「A 商店库」/)).toBeInTheDocument();
