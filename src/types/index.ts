@@ -13,7 +13,9 @@ export type PageKey =
   | 'report'
   | 'workflow'
   | 'studio'
-  | 'skills';
+  | 'skills'
+  | 'workspace'
+  | 'memory';
 
 export type WorkspacePageKey = Exclude<PageKey, 'login'>;
 

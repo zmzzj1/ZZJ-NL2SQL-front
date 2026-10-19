@@ -50,6 +50,11 @@ export type ErrorCode =
   | 'SKILL_INVALID_REFERENCE'
   | 'TOOL_NOT_IN_AGENT_WHITELIST'
   | 'MODEL_UNAVAILABLE'
+  | 'WORKSPACE_NOT_FOUND'
+  | 'WORKSPACE_FORBIDDEN'
+  | 'MEMORY_NOT_FOUND'
+  | 'INDEX_NOT_READY'
+  | 'EMBEDDING_UNAVAILABLE'
   /** 仅前端使用：请求未到达后端（断网、后端关闭、代理失败）。 */
   | 'NETWORK_ERROR';
 
@@ -562,4 +567,67 @@ export interface SkillVersion {
   versionNo: number;
   contentHash: string;
   publishedAt: string;
+}
+
+/** P8：Workspace、成员、资源授权与长期 Memory。 */
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
+
+export type WorkspaceStatus = 'ACTIVE' | 'DISABLED';
+
+export interface Workspace {
+  id: number;
+  ownerId: number;
+  name: string;
+  description: string | null;
+  status: WorkspaceStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceMember {
+  id: number;
+  workspaceId: number;
+  userId: number;
+  role: WorkspaceRole;
+  status: string;
+  grantedBy: number;
+  grantedAt: string;
+}
+
+export type ResourceType = 'AGENT' | 'KNOWLEDGE' | 'REPORT' | 'CONNECTION';
+
+export type GrantScope = 'READ' | 'EDIT';
+
+export interface ResourceGrant {
+  id: number;
+  resourceType: ResourceType;
+  resourceId: number;
+  resourceOwner: number;
+  workspaceId: number;
+  scope: GrantScope;
+  status: string;
+  grantedBy: number;
+  grantedAt: string;
+}
+
+export type MemoryType = 'PROFILE' | 'TASK' | 'FACT' | 'EPISODIC';
+
+export type MemoryScope = 'PERSONAL' | 'WORKSPACE';
+
+export type MemoryConfidence = 'UNVERIFIED' | 'VERIFIED' | 'REJECTED';
+
+export interface LongTermMemory {
+  id: number;
+  ownerId: number;
+  workspaceId: number | null;
+  memoryType: MemoryType;
+  scope: MemoryScope;
+  title: string;
+  content: string;
+  sourceRef: string | null;
+  confidence: MemoryConfidence;
+  status: string;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

@@ -10,6 +10,8 @@ import { ReportPage } from './pages/ReportPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { SkillsPage } from './pages/SkillsPage';
 import { StudioPage } from './pages/StudioPage';
+import { WorkspacePage } from './pages/WorkspacePage';
+import { MemoryPage } from './pages/MemoryPage';
 import { WorkflowPage } from './pages/WorkflowPage';
 import { useAuth } from './hooks/useAuth';
 import { useUiPreferences } from './hooks/useUiPreferences';
@@ -60,6 +62,8 @@ export default function App() {
       {page === 'knowledge' ? <KnowledgePage /> : null}
       {page === 'studio' ? <StudioPage /> : null}
       {page === 'skills' ? <SkillsPage /> : null}
+      {page === 'workspace' ? <WorkspacePage /> : null}
+      {page === 'memory' ? <MemoryPage /> : null}
       {page === 'report' ? <ReportPage /> : null}
       {page === 'workflow' ? <WorkflowPage /> : null}
       {page === 'settings' ? (

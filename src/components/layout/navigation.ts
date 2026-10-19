@@ -3,10 +3,12 @@ import {
   BookOpen,
   BookMarked,
   Bot,
+  Brain,
   Database,
   History as HistoryIcon,
   LayoutDashboard,
   Settings,
+  Users,
   Workflow as WorkflowIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -56,6 +58,18 @@ export const workspaceNavItems: NavItem[] = [
     label: 'Skills',
     description: '可复用任务指引',
     icon: BookMarked,
+  },
+  {
+    key: 'workspace',
+    label: '工作空间',
+    description: '成员与资源授权',
+    icon: Users,
+  },
+  {
+    key: 'memory',
+    label: '长期记忆',
+    description: '跨会话事实与偏好',
+    icon: Brain,
   },
   {
     key: 'report',
