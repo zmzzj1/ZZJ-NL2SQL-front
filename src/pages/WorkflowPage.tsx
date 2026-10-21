@@ -10,7 +10,7 @@ import type {
 import {
   listWorkflows,
   createWorkflow,
-  fetchWorkflow,
+  updateWorkflow,
   streamRunWorkflow,
   approveWorkflowNode,
   fetchWorkflowRun,
@@ -18,6 +18,7 @@ import {
 import { describeError } from '../api/http';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useConnections } from '../features/connections/useConnections';
+import { SchedulePanel } from '../features/schedule/SchedulePanel';
 
 const NODE_TYPES: { type: WorkflowNodeType; label: string }[] = [
   { type: 'START', label: '开始' },
@@ -92,9 +93,7 @@ export function WorkflowPage() {
     try {
       const body = { name: name.trim(), definition: graph() };
       if (editing) {
-        await fetchWorkflow(editing.id); // 触发校验路径
-        await createWorkflow(body); // 简化：新增（避免并发版本复杂度暴露给演示）
-        // 说明：真实并发版本用 PUT + revision，此处用新增保证演示可用。
+        await updateWorkflow(editing.id, editing.revision, body);
       } else {
         await createWorkflow(body);
       }
@@ -267,6 +266,10 @@ export function WorkflowPage() {
           </button>
         </section>
       </div>
+
+      {editing ? (
+        <SchedulePanel workflowId={editing.id} connectionId={connections[0]?.id ?? null} />
+      ) : null}
 
       {run ? (
         <section aria-label="运行状态" className="card overflow-hidden">

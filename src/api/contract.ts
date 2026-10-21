@@ -66,6 +66,16 @@ export type ErrorCode =
   | 'MODEL_CIRCUIT_OPEN'
   | 'QUOTA_NOT_FOUND'
   | 'ADMIN_FORBIDDEN'
+  | 'SCHEDULE_NOT_FOUND'
+  | 'SCHEDULE_CONFLICT'
+  | 'SCHEDULE_INVALID_CRON'
+  | 'SCHEDULE_INVALID_TIMEZONE'
+  | 'SCHEDULE_DISABLED'
+  | 'SCHEDULE_FORBIDDEN'
+  | 'SCHEDULE_INVALID_INTERVAL'
+  | 'TRIGGER_NOT_FOUND'
+  | 'CONCURRENCY_SKIPPED'
+  | 'EXPORT_TOO_LARGE'
   /** 仅前端使用：请求未到达后端（断网、后端关闭、代理失败）。 */
   | 'NETWORK_ERROR';
 
@@ -687,4 +697,80 @@ export interface RoutePolicyVersion {
   status: string;
   publishedAt: string | null;
   createdAt: string;
+}
+
+export type ScheduleStatus = 'ACTIVE' | 'PAUSED';
+
+export type MisfirePolicy = 'SKIP' | 'FIRE_ONCE';
+
+export type OverlapPolicy = 'SKIP_WHILE_RUNNING' | 'QUEUE_ONE';
+
+export interface Schedule {
+  id: number;
+  workspaceId: number | null;
+  workflowId: number;
+  workflowRevision: number;
+  connectionId: number;
+  userInput: string | null;
+  agentId: number | null;
+  agentVersionId: number | null;
+  cron: string;
+  cronNormalized: string;
+  timezone: string;
+  status: ScheduleStatus;
+  misfirePolicy: MisfirePolicy;
+  overlapPolicy: OverlapPolicy;
+  nextFireAt: string | null;
+  lastFireAt: string | null;
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateScheduleRequest {
+  workspaceId?: number | null;
+  workflowId: number;
+  connectionId: number;
+  userInput?: string;
+  agentId?: number | null;
+  agentVersionId?: number | null;
+  cron: string;
+  timezone: string;
+  misfirePolicy?: MisfirePolicy;
+  overlapPolicy?: OverlapPolicy;
+}
+
+export interface UpdateScheduleRequest {
+  cron?: string;
+  timezone?: string;
+  misfirePolicy?: MisfirePolicy;
+  overlapPolicy?: OverlapPolicy;
+  status?: ScheduleStatus;
+  userInput?: string;
+}
+
+export type OccurrenceState =
+  | 'SCHEDULED'
+  | 'CLAIMED'
+  | 'WAITING_APPROVAL'
+  | 'RUNNING'
+  | 'SUCCEEDED'
+  | 'FAILED'
+  | 'CANCELED'
+  | 'SKIPPED';
+
+export interface ScheduleOccurrence {
+  id: number;
+  scheduleId: number;
+  fireAt: string;
+  fireAtLocal: string | null;
+  workflowRevision: number;
+  state: OccurrenceState;
+  attempt: number;
+  triggerSource: 'SCHEDULER' | 'MANUAL';
+  workflowRunId: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

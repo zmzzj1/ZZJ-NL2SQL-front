@@ -2,6 +2,8 @@
 
 React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6–P8 新增分析报告、工作流、Agent Studio、Skills、工作空间、长期记忆和混合检索；P9 新增模型治理管理后台。
 
+P10 定时调度功能持续开发中。
+
 ## 已实现
 
 | 区域 | 状态 |
