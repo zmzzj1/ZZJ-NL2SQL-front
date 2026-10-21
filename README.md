@@ -61,6 +61,11 @@ npm run check   # 五项串联
 
 当前基线：13 个测试文件、67 个用例，lint 0 error / 0 warning；生产构建通过。
 
+## P12 集成说明（2026-10-21）
+
+- 后端身份体系迁移到 Sa-Token + Redis（会话 Cookie 名由 `JSESSIONID` 改为 `satoken`）；前端 `api/http.ts` 不解析会话 Cookie 名（仅 `credentials: 'include'` + CSRF 头 `X-XSRF-TOKEN`），**前端零改动**通过全部检查。
+- 登录/登出/找回当前用户、知识检索（关键词/向量/混合）、长期记忆维护与检索、Agent/审批/Workflow/定时任务的 REST 与 SSE 契约保持不变。
+
 ## 接口
 
 | 方法 | 路径 | 说明 |
