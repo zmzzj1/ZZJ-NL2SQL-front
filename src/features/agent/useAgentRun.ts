@@ -8,7 +8,18 @@ import {
   streamAgentRun,
 } from '../../api/agent';
 import type { AgentEventPayload } from '../../api/agent';
-import type { AgentRun, AgentRoute, AgentRunStatus, AgentStep, KnowledgeSourceRef } from '../../api/contract';
+import type {
+  AgentConfigResolved,
+  AgentRun,
+  AgentRoute,
+  AgentRunStatus,
+  AgentStep,
+  ContextCompactedMeta,
+  GraphNodeName,
+  GraphNodeState,
+  GraphNodeStatus,
+  KnowledgeSourceRef,
+} from '../../api/contract';
 import { describeError } from '../../api/http';
 
 const ACTIVE_STATUS: AgentRunStatus[] = ['PLANNING', 'WAITING_APPROVAL', 'RUNNING', 'CLARIFYING'];
@@ -39,6 +50,9 @@ function skeleton(runId: number, question: string, conversationId: number): Agen
     createdAt: now,
     updatedAt: now,
     steps: [],
+    graphNodes: [],
+    contextCompacted: null,
+    configResolved: null,
   };
 }
 
@@ -49,11 +63,74 @@ function patchStep(run: AgentRun, stepId: number, patch: Partial<AgentStep>): Ag
   };
 }
 
+function upsertNode(
+  run: AgentRun,
+  node: GraphNodeName,
+  status: GraphNodeStatus,
+  revision: string | undefined,
+): AgentRun {
+  const nodes: GraphNodeState[] = run.graphNodes ?? [];
+  const last = nodes[nodes.length - 1];
+  // 连续相同节点与状态只更新版本，避免时间线出现重复噪声。
+  if (last && last.node === node && last.status === status) {
+    return {
+      ...run,
+      graphNodes: [...nodes.slice(0, -1), { ...last, revision: revision ?? last.revision }],
+    };
+  }
+  return { ...run, graphNodes: [...nodes, { node, status, revision }] };
+}
+
 function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload): AgentRun | null {
   if (!run) return run;
   switch (event) {
     case 'run.started':
       return { ...run, id: Number(data.runId ?? run.id) };
+    case 'config.resolved': {
+      const config: AgentConfigResolved = {
+        agentId: data.agentId != null ? Number(data.agentId) : null,
+        agentVersionId: data.agentVersionId != null ? Number(data.agentVersionId) : null,
+        ragEnabled: Boolean(data.ragEnabled),
+        memoryEnabled: Boolean(data.memoryEnabled),
+      };
+      return { ...run, configResolved: config };
+    }
+    case 'node.started':
+      return upsertNode(
+        run,
+        String(data.node ?? '') as GraphNodeName,
+        'STARTED',
+        data.revision != null ? String(data.revision) : undefined,
+      );
+    case 'node.completed':
+      return upsertNode(
+        run,
+        String(data.node ?? '') as GraphNodeName,
+        'COMPLETED',
+        data.revision != null ? String(data.revision) : undefined,
+      );
+    case 'node.waiting_approval':
+      return upsertNode(run, String(data.node ?? '') as GraphNodeName, 'WAITING_APPROVAL', undefined);
+    case 'context.compacted': {
+      const meta: ContextCompactedMeta = {
+        inputTokensEstimate: Number(data.inputTokensEstimate ?? 0),
+        retainedSources: Number(data.retainedSources ?? 0),
+        droppedSegments: Number(data.droppedSegments ?? 0),
+        historyBudget: Number(data.historyBudget ?? 0),
+        layersUsed: String(data.layersUsed ?? ''),
+        contextHash: String(data.contextHash ?? ''),
+      };
+      return { ...run, contextCompacted: meta };
+    }
+    case 'agent.selected': {
+      const seq = Number(data.sequence);
+      const role = String(data.role ?? '');
+      if (!role) return run;
+      return {
+        ...run,
+        steps: run.steps.map((step) => (step.sequence === seq ? { ...step, agentRole: role } : step)),
+      };
+    }
     case 'plan.ready': {
       const raw = Array.isArray(data.steps) ? data.steps : [];
       const steps: AgentStep[] = raw.map((item) => {

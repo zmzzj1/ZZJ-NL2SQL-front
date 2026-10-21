@@ -269,6 +269,53 @@ export type AgentStepStatus = 'PENDING' | 'WAITING_APPROVAL' | 'RUNNING' | 'SUCC
 
 export type AgentApprovalStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
+/** P11：统一状态图的节点名（与后端 GraphNode 对齐，指南 §4.1）。 */
+export type GraphNodeName =
+  | 'ROUTING'
+  | 'PLANNING'
+  | 'CONTEXT_BUILDING'
+  | 'RUNNING'
+  | 'SQL_GENERATION'
+  | 'SQL_EXECUTION'
+  | 'TOOL_INVOCATION'
+  | 'CODE_ANALYSIS'
+  | 'REPORT_GENERATION'
+  | 'WAITING_CLARIFICATION'
+  | 'WAITING_SQL_APPROVAL'
+  | 'KNOWLEDGE'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELED';
+
+export type GraphNodeStatus = 'STARTED' | 'COMPLETED' | 'WAITING_APPROVAL';
+
+/** P11：运行期状态图轨迹中的一个节点（由 SSE node.* 事件累积，UI 运行时态）。 */
+export interface GraphNodeState {
+  node: GraphNodeName;
+  status: GraphNodeStatus;
+  /** 后端状态机乐观并发版本号，用于暂停/恢复核对（P1129）。 */
+  revision?: string;
+  sequence?: number;
+}
+
+/** P11：分层上下文压缩的脱敏元数据（指南 §7.2 / P1126，不回传用户私有原文）。 */
+export interface ContextCompactedMeta {
+  inputTokensEstimate: number;
+  retainedSources: number;
+  droppedSegments: number;
+  historyBudget: number;
+  layersUsed: string;
+  contextHash: string;
+}
+
+/** P11：本轮解析的 Agent 配置摘要（不含敏感提示词全文，指南 §5.1）。 */
+export interface AgentConfigResolved {
+  agentId: number | null;
+  agentVersionId: number | null;
+  ragEnabled: boolean;
+  memoryEnabled: boolean;
+}
+
 export interface AgentStep {
   id: number;
   sequence: number;
@@ -304,6 +351,14 @@ export interface AgentRun {
   createdAt: string;
   updatedAt: string;
   steps: AgentStep[];
+  /** P11：后端持久化的统一状态图快照（JSON 字符串），用于历史恢复与轨迹核对。 */
+  graphState?: string | null;
+  /** P11：SSE 累积的状态图轨迹（UI 运行时态，不在详情接口返回）。 */
+  graphNodes?: GraphNodeState[];
+  /** P11：最近一次分层上下文压缩的脱敏元数据（UI 运行时态）。 */
+  contextCompacted?: ContextCompactedMeta | null;
+  /** P11：本轮解析的 Agent 配置摘要（UI 运行时态）。 */
+  configResolved?: AgentConfigResolved | null;
 }
 
 export interface StartEventData {
