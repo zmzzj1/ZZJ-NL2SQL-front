@@ -59,7 +59,7 @@ npm run build
 npm run check   # 五项串联
 ```
 
-当前基线：13 个测试文件、67 个用例，lint 0 error / 0 warning；生产构建通过。
+当前基线：14 个测试文件、72 个用例，lint 0 error / 0 warning；生产构建通过。
 
 ## P12 集成说明（2026-10-21）
 
@@ -107,6 +107,7 @@ npm run check   # 五项串联
 
 ```text
 src/
+├── app/                      # 应用启动、登录态引导、工作区外壳与路由配置
 ├── api/                      # 契约、认证、业务接口、HTTP/SSE 客户端
 ├── features/agent/           # Agent 运行状态与时间线
 ├── features/connections/     # 连接列表/表单/Schema

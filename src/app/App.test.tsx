@@ -2,14 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import App from './App';
-import type * as ConnectionsModule from './api/connections';
+import type * as ConnectionsModule from '../api/connections';
 
 const authState = vi.hoisted(() => ({
   status: 'authenticated' as 'authenticated' | 'anonymous',
   signOut: vi.fn(),
 }));
 
-vi.mock('./hooks/useAuth', () => ({
+vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({
     status: authState.status,
     user: authState.status === 'authenticated' ? { id: 1, email: 'alice@example.com', displayName: 'Alice' } : null,
@@ -19,17 +19,17 @@ vi.mock('./hooks/useAuth', () => ({
   }),
 }));
 
-vi.mock('./hooks/useBackendHealth', () => ({
+vi.mock('../hooks/useBackendHealth', () => ({
   useBackendHealth: () => ({ status: 'offline', checkedAt: null, recheck: () => {} }),
 }));
 
-vi.mock('./api/history', () => ({
+vi.mock('../api/history', () => ({
   listQueryHistory: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
   fetchQueryHistory: vi.fn(),
   deleteQueryHistory: vi.fn(),
 }));
 
-vi.mock('./api/agent', () => ({
+vi.mock('../api/agent', () => ({
   fetchLatestAgentRun: vi.fn().mockResolvedValue(null),
   streamAgentRun: vi.fn(),
   approveAgentStep: vi.fn(),
@@ -38,15 +38,15 @@ vi.mock('./api/agent', () => ({
   fetchAgentRun: vi.fn(),
 }));
 
-vi.mock('./api/conversations', () => ({
+vi.mock('../api/conversations', () => ({
   listConversations: vi.fn().mockResolvedValue({ items: [], nextCursor: null }),
   createConversation: vi.fn(),
   fetchConversation: vi.fn(),
   deleteConversation: vi.fn(),
 }));
 
-vi.mock('./api/connections', async () => {
-  const actual = await vi.importActual<typeof ConnectionsModule>('./api/connections');
+vi.mock('../api/connections', async () => {
+  const actual = await vi.importActual<typeof ConnectionsModule>('../api/connections');
   return {
     ...actual,
     listConnections: vi.fn().mockResolvedValue([

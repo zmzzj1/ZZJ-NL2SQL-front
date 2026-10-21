@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { SidebarBackdrop, Topbar } from './Topbar';
-import { workspaceNavItems } from './navigation';
+import { findWorkspaceRoute } from '../../app/workspaceRoutes';
 import type { WorkspacePageKey } from '../../types';
 import type { BackendStatus } from '../../hooks/useBackendHealth';
 
@@ -39,7 +39,7 @@ export function AppShell({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [menuOpen]);
 
-  const title = workspaceNavItems.find((item) => item.key === current)?.label ?? '工作台';
+  const title = findWorkspaceRoute(current).label;
 
   const goTo = (page: WorkspacePageKey) => {
     onNavigate(page);

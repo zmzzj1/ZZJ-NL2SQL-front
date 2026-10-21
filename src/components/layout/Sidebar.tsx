@@ -1,5 +1,5 @@
 import type { WorkspacePageKey } from '../../types';
-import { workspaceNavItems } from './navigation';
+import { workspaceRoutes } from '../../app/workspaceRoutes';
 
 interface SidebarProps {
   current: WorkspacePageKey;
@@ -21,7 +21,7 @@ export function Sidebar({ current, onNavigate, open }: SidebarProps) {
       }`}
     >
       <nav className="flex h-full flex-col gap-1 p-3">
-        {workspaceNavItems.map((item) => {
+        {workspaceRoutes.map((item) => {
           const Icon = item.icon;
           const active = item.key === current;
           return (
