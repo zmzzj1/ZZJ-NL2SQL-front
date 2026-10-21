@@ -4,6 +4,7 @@ import { AppShell } from './components/layout/AppShell';
 import { DashboardPage } from './pages/DashboardPage';
 import { DatabasePage } from './pages/DatabasePage';
 import { HistoryPage } from './pages/HistoryPage';
+import { SqlConsolePage } from './pages/SqlConsolePage';
 import { KnowledgePage } from './pages/KnowledgePage';
 import { LoginPage } from './pages/LoginPage';
 import { ReportPage } from './pages/ReportPage';
@@ -60,6 +61,7 @@ export default function App() {
       ) : null}
       {page === 'database' ? <DatabasePage /> : null}
       {page === 'history' ? <HistoryPage fontSize={preferences.editorFontSize} /> : null}
+      {page === 'console' ? <SqlConsolePage /> : null}
       {page === 'knowledge' ? <KnowledgePage /> : null}
       {page === 'studio' ? <StudioPage /> : null}
       {page === 'skills' ? <SkillsPage /> : null}

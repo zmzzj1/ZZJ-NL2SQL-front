@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Settings,
   ShieldCheck,
+  TerminalSquare,
   Users,
   Workflow as WorkflowIcon,
 } from 'lucide-react';
@@ -41,6 +42,12 @@ export const workspaceNavItems: NavItem[] = [
     label: '历史记录',
     description: '真实查询记录',
     icon: HistoryIcon,
+  },
+  {
+    key: 'console',
+    label: 'SQL Console',
+    description: '多标签编辑与导出',
+    icon: TerminalSquare,
   },
   {
     key: 'knowledge',

@@ -9,6 +9,7 @@ export type PageKey =
   | 'database'
   | 'history'
   | 'knowledge'
+  | 'console'
   | 'settings'
   | 'report'
   | 'workflow'

@@ -52,7 +52,10 @@ export function useSchedules() {
 
   const trigger = useCallback((id: number) => triggerSchedule(id), []);
 
-  const preview = useCallback((cron: string, timezone: string, count: number) => previewSchedule(cron, timezone, count), []);
+  const preview = useCallback(
+    (cron: string, timezone: string, count: number) => previewSchedule(cron, timezone, count),
+    [],
+  );
 
   return { schedules, loading, error, reload, create, update, remove, trigger, preview };
 }

@@ -750,14 +750,7 @@ export interface UpdateScheduleRequest {
 }
 
 export type OccurrenceState =
-  | 'SCHEDULED'
-  | 'CLAIMED'
-  | 'WAITING_APPROVAL'
-  | 'RUNNING'
-  | 'SUCCEEDED'
-  | 'FAILED'
-  | 'CANCELED'
-  | 'SKIPPED';
+  'SCHEDULED' | 'CLAIMED' | 'WAITING_APPROVAL' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED' | 'SKIPPED';
 
 export interface ScheduleOccurrence {
   id: number;

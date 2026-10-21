@@ -267,9 +267,7 @@ export function WorkflowPage() {
         </section>
       </div>
 
-      {editing ? (
-        <SchedulePanel workflowId={editing.id} connectionId={connections[0]?.id ?? null} />
-      ) : null}
+      {editing ? <SchedulePanel workflowId={editing.id} connectionId={connections[0]?.id ?? null} /> : null}
 
       {run ? (
         <section aria-label="运行状态" className="card overflow-hidden">

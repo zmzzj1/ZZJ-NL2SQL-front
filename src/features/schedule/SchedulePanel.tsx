@@ -144,7 +144,7 @@ export function SchedulePanel({ workflowId, connectionId }: SchedulePanelProps) 
         <span className="text-[11px] text-ink-muted">到点触发 Workflow Run，SQL 节点仍停在待审批。</span>
       </div>
 
-      {(error || panelError) ? (
+      {error || panelError ? (
         <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
           {panelError ?? error}
         </p>
@@ -204,9 +204,7 @@ export function SchedulePanel({ workflowId, connectionId }: SchedulePanelProps) 
       </div>
 
       {previewTimes.length > 0 ? (
-        <p className="text-[11px] text-ink-muted">
-          未来触发：{previewTimes.map((t) => formatUtc(t)).join(' ｜ ')}
-        </p>
+        <p className="text-[11px] text-ink-muted">未来触发：{previewTimes.map((t) => formatUtc(t)).join(' ｜ ')}</p>
       ) : null}
 
       <div className="flex items-center gap-2">

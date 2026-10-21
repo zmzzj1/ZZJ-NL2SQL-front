@@ -1,9 +1,4 @@
-import type {
-  CreateScheduleRequest,
-  Schedule,
-  ScheduleOccurrence,
-  UpdateScheduleRequest,
-} from './contract';
+import type { CreateScheduleRequest, Schedule, ScheduleOccurrence, UpdateScheduleRequest } from './contract';
 import { requestJson } from './http';
 
 export async function listSchedules(): Promise<Schedule[]> {
@@ -18,11 +13,7 @@ export async function fetchSchedule(id: number): Promise<Schedule> {
   return requestJson<Schedule>(`/v1/schedules/${id}`);
 }
 
-export async function updateSchedule(
-  id: number,
-  revision: number,
-  body: UpdateScheduleRequest,
-): Promise<Schedule> {
+export async function updateSchedule(id: number, revision: number, body: UpdateScheduleRequest): Promise<Schedule> {
   return requestJson<Schedule>(`/v1/schedules/${id}?revision=${revision}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
@@ -33,11 +24,7 @@ export async function deleteSchedule(id: number): Promise<void> {
   await requestJson<void>(`/v1/schedules/${id}`, { method: 'DELETE' });
 }
 
-export async function previewSchedule(
-  cron: string,
-  timezone: string,
-  count: number,
-): Promise<string[]> {
+export async function previewSchedule(cron: string, timezone: string, count: number): Promise<string[]> {
   return requestJson<string[]>('/v1/schedules/preview', {
     method: 'POST',
     body: JSON.stringify({ cron, timezone, count }),
