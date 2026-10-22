@@ -332,6 +332,18 @@ export interface AgentConfigResolved {
   memoryEnabled: boolean;
 }
 
+/** P14-B：多候选 SQL 选优的脱敏摘要（SSE step.sql_candidates_evaluated，UI 运行时态，不在详情接口返回）。 */
+export interface SqlCandidateSummary {
+  mode: 'SINGLE' | 'MULTI';
+  totalCandidates: number;
+  validCandidates: number;
+  selectedCandidateIndex: number;
+  ruleScore: number;
+  llmScore: number;
+  compositeScore: number;
+  ruleFallback: boolean;
+}
+
 export interface AgentStep {
   id: number;
   sequence: number;
@@ -348,6 +360,12 @@ export interface AgentStep {
   errorCode: ErrorCode | null;
   errorMessage: string | null;
   resultSummary: string | null;
+  /** P14-B：多候选选优摘要（SSE 推送后挂到当前步骤，详情刷新后由前端会话内合并保留）。 */
+  candidateSummary?: SqlCandidateSummary | null;
+  /** P14-C：CODE_ANALYST 步骤成功后绑定的真实分析运行 ID（详情接口返回，刷新可恢复）。 */
+  analysisRunId: number | null;
+  /** P14-C：REPORT_ASSISTANT 步骤成功后绑定的真实报告 ID（详情接口返回，刷新可恢复）。 */
+  reportId: number | null;
 }
 
 export interface AgentRun {

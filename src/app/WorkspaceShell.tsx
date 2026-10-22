@@ -19,6 +19,8 @@ export function WorkspaceShell({ user, signOut }: WorkspaceShellProps) {
   const { preferences, setTheme, setEditorFontSize, resetPreferences } = useUiPreferences();
   const backendHealth = useBackendHealth();
   const [page, setPage] = useState<WorkspacePageKey>('dashboard');
+  // P14-C：Agent 时间线 → 报告页的真实工件定位（一次性焦点）。
+  const [artifactFocus, setArtifactFocus] = useState<{ kind: 'analysis' | 'report'; id: number } | null>(null);
 
   const route = findWorkspaceRoute(page);
   const routeContext: WorkspaceRouteContext = {
@@ -27,6 +29,11 @@ export function WorkspaceShell({ user, signOut }: WorkspaceShellProps) {
     onFontSizeChange: setEditorFontSize,
     onResetPreferences: resetPreferences,
     onNavigate: setPage,
+    onGoToArtifact: (kind, artifactId) => {
+      setArtifactFocus({ kind, id: artifactId });
+      setPage('report');
+    },
+    artifactFocus,
   };
 
   return (

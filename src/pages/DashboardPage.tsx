@@ -15,6 +15,8 @@ import { useSqlWorkspace } from '../features/sql-workspace/useSqlWorkspace';
 interface DashboardPageProps {
   fontSize: number;
   onGoToDatabase: () => void;
+  /** P14-C：从时间线跳转到分析报告页查看指定真实工件。 */
+  onGoToArtifact?: (kind: 'analysis' | 'report', artifactId: number) => void;
 }
 
 function formatActivity(iso: string): string {
@@ -32,7 +34,7 @@ function formatActivity(iso: string): string {
  * SQL 工作台页面：会话与数据源共同决定生成/执行上下文。
  * 切换数据源会开启新会话；切换会话会同步其绑定的数据源。
  */
-export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) {
+export function DashboardPage({ fontSize, onGoToDatabase, onGoToArtifact }: DashboardPageProps) {
   const { connections, loading, error, reload } = useConnections();
   const conversations = useConversations();
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -388,6 +390,8 @@ export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) 
               onReject={(step) => void agent.reject(step)}
               onCancel={() => void agent.cancel()}
               onReload={() => void agent.reload()}
+              onOpenAnalysis={onGoToArtifact ? (analysisRunId) => onGoToArtifact('analysis', analysisRunId) : undefined}
+              onOpenReport={onGoToArtifact ? (reportId) => onGoToArtifact('report', reportId) : undefined}
             />
           ) : (
             <>

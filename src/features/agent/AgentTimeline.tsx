@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, ShieldCheck, XCircle } from 'lucide-react';
+import { BarChart3, FileText, Loader2, ShieldCheck, XCircle } from 'lucide-react';
 import type {
   AgentConfigResolved,
   AgentRoute,
@@ -10,6 +10,7 @@ import type {
   ContextCompactedMeta,
   GraphNodeName,
   GraphNodeState,
+  SqlCandidateSummary,
 } from '../../api/contract';
 import { EmptyState } from '../../components/ui/EmptyState';
 
@@ -175,6 +176,29 @@ function ConfigResolvedView({ config }: { config: AgentConfigResolved }) {
   );
 }
 
+/** P14-C：非 SQL 步骤的角色徽标（Code/Report/工具），避免把分析步骤误当 SQL 查询。 */
+const NON_SQL_ROLE_LABEL: Record<string, string> = {
+  CODE_ANALYST: '代码分析步骤',
+  REPORT_ASSISTANT: '报告步骤',
+  TOOL_ASSISTANT: '非 SQL 工具步骤',
+};
+
+/** P14-B：多候选 SQL 选优摘要（脱敏计数与分值），仅一行，不影响审批按钮。 */
+function CandidateSummaryView({ summary }: { summary: SqlCandidateSummary }) {
+  if (summary.mode !== 'MULTI') return null;
+  const method = summary.ruleFallback ? '评分不可用，按规则选优' : '规则 + 模型选优';
+  const picked =
+    summary.selectedCandidateIndex > 0
+      ? `（选中 #${summary.selectedCandidateIndex}，综合分 ${summary.compositeScore.toFixed(3)}）`
+      : '';
+  return (
+    <p className="mt-1.5 text-[11px] text-ink-muted">
+      候选 SQL {summary.totalCandidates} 条 / 合法 {summary.validCandidates} 条 · {method}
+      {picked}
+    </p>
+  );
+}
+
 interface AgentTimelineProps {
   run: AgentRun | null;
   loading: boolean;
@@ -184,6 +208,54 @@ interface AgentTimelineProps {
   onReject: (step: AgentStep) => void;
   onCancel: () => void;
   onReload: () => void;
+  /** P14-C：跳转到已有图表组件查看真实分析工件（未提供时仅展示 ID）。 */
+  onOpenAnalysis?: (analysisRunId: number) => void;
+  /** P14-C：跳转到已有安全报告详情页（未提供时仅展示 ID）。 */
+  onOpenReport?: (reportId: number) => void;
+}
+
+/** P14-C：Code 步骤的真实分析工件入口（只有真实 analysisRunId 才渲染，不显示假按钮）。 */
+function AnalysisEntry({ step, onOpen }: { step: AgentStep; onOpen?: (analysisRunId: number) => void }) {
+  if (step.analysisRunId == null) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="rounded-full border border-line bg-panel-muted px-1.5 py-0.5 text-[10px] text-ink-muted">
+        分析运行 #{step.analysisRunId}
+      </span>
+      {onOpen ? (
+        <button
+          type="button"
+          className="btn-secondary px-2 py-1 text-xs"
+          onClick={() => onOpen(step.analysisRunId as number)}
+        >
+          <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
+          查看图表
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+/** P14-C：Report 步骤的真实报告入口（只有真实 reportId 才渲染，不显示假按钮）。 */
+function ReportEntry({ step, onOpen }: { step: AgentStep; onOpen?: (reportId: number) => void }) {
+  if (step.reportId == null) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <span className="rounded-full border border-line bg-panel-muted px-1.5 py-0.5 text-[10px] text-ink-muted">
+        报告 #{step.reportId}
+      </span>
+      {onOpen ? (
+        <button
+          type="button"
+          className="btn-secondary px-2 py-1 text-xs"
+          onClick={() => onOpen(step.reportId as number)}
+        >
+          <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+          查看报告
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 /**
@@ -199,6 +271,8 @@ export function AgentTimeline({
   onReject,
   onCancel,
   onReload,
+  onOpenAnalysis,
+  onOpenReport,
 }: AgentTimelineProps) {
   const active = run != null && ['PLANNING', 'WAITING_APPROVAL', 'RUNNING'].includes(run.status);
   const [showGraphState, setShowGraphState] = useState(false);
@@ -298,7 +372,8 @@ export function AgentTimeline({
           {run.steps.length > 0 ? (
             <ol className="space-y-2">
               {run.steps.map((step) => {
-                const waiting = step.status === 'WAITING_APPROVAL' && !streaming;
+                // P14-C：非 SQL 步骤没有 SQL 可确认，审批按钮只对待确认的 SQL 步骤出现。
+                const waiting = step.sql != null && step.status === 'WAITING_APPROVAL' && !streaming;
                 return (
                   <li key={step.id} className="rounded-xl border border-line bg-panel p-3">
                     <div className="flex flex-wrap items-center gap-2">
@@ -311,9 +386,9 @@ export function AgentTimeline({
                           {ROLE_LABEL[step.agentRole] ?? step.agentRole}
                         </span>
                       ) : null}
-                      {!step.sql && step.agentRole === 'TOOL_ASSISTANT' ? (
+                      {!step.sql && step.agentRole && NON_SQL_ROLE_LABEL[step.agentRole] ? (
                         <span className="rounded-full border border-line bg-panel-muted px-1.5 py-0.5 text-[10px] text-ink-muted">
-                          非 SQL 工具步骤
+                          {NON_SQL_ROLE_LABEL[step.agentRole]}
                         </span>
                       ) : null}
                       <span
@@ -329,6 +404,8 @@ export function AgentTimeline({
                       </p>
                     ) : null}
 
+                    {step.candidateSummary ? <CandidateSummaryView summary={step.candidateSummary} /> : null}
+
                     {step.sql ? (
                       <div className="mt-2">
                         <p className="text-[11px] text-ink-muted">SQL v{step.sqlVersion}</p>
@@ -343,6 +420,10 @@ export function AgentTimeline({
                         {step.resultSummary}
                       </p>
                     ) : null}
+
+                    {step.agentRole === 'CODE_ANALYST' ? <AnalysisEntry step={step} onOpen={onOpenAnalysis} /> : null}
+
+                    {step.agentRole === 'REPORT_ASSISTANT' ? <ReportEntry step={step} onOpen={onOpenReport} /> : null}
 
                     {step.errorCode ? (
                       <p className="mt-2 text-[11px] text-danger">

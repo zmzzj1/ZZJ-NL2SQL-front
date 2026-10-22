@@ -37,6 +37,10 @@ export interface WorkspaceRouteContext {
   onFontSizeChange: (size: number) => void;
   onResetPreferences: () => void;
   onNavigate: (page: WorkspacePageKey) => void;
+  /** P14-C：Agent 时间线请求查看指定真实工件（分析运行或报告）。 */
+  onGoToArtifact?: (kind: 'analysis' | 'report', artifactId: number) => void;
+  /** P14-C：WorkspaceShell 持有的待查看工件，供报告页打开后立即定位。 */
+  artifactFocus?: { kind: 'analysis' | 'report'; id: number } | null;
 }
 
 export interface WorkspaceRoute {
@@ -65,6 +69,7 @@ export const workspaceRoutes: WorkspaceRoute[] = [
       <DashboardPage
         fontSize={context.preferences.editorFontSize}
         onGoToDatabase={() => context.onNavigate('database')}
+        onGoToArtifact={context.onGoToArtifact}
       />
     ),
   },
@@ -129,7 +134,7 @@ export const workspaceRoutes: WorkspaceRoute[] = [
     label: '分析报告',
     description: '真实数据图表与报告',
     icon: BarChart3,
-    render: () => <ReportPage />,
+    render: (context) => <ReportPage focus={context.artifactFocus ?? null} />,
   },
   {
     key: 'workflow',

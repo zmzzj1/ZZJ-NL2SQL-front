@@ -19,6 +19,7 @@ import type {
   GraphNodeState,
   GraphNodeStatus,
   KnowledgeSourceRef,
+  SqlCandidateSummary,
   ToolInvocationRequest,
 } from '../../api/contract';
 import { describeError } from '../../api/http';
@@ -69,6 +70,38 @@ function patchStep(run: AgentRun, stepId: number, patch: Partial<AgentStep>): Ag
     ...run,
     steps: run.steps.map((step) => (step.id === stepId ? { ...step, ...patch } : step)),
   };
+}
+
+/** P14-B：解析 step.sql_candidates_evaluated 的脱敏摘要（字段缺失时按 0 回退，不抛错）。 */
+function toCandidateSummary(data: AgentEventPayload): SqlCandidateSummary {
+  return {
+    mode: data.mode === 'SINGLE' ? 'SINGLE' : 'MULTI',
+    totalCandidates: Number(data.totalCandidates ?? 0),
+    validCandidates: Number(data.validCandidates ?? 0),
+    selectedCandidateIndex: Number(data.selectedCandidateIndex ?? 0),
+    ruleScore: Number(data.ruleScore ?? 0),
+    llmScore: Number(data.llmScore ?? 0),
+    compositeScore: Number(data.compositeScore ?? 0),
+    ruleFallback: Boolean(data.ruleFallback),
+  };
+}
+
+/**
+ * P14-B：服务端详情不返回候选摘要，流结束后重新拉取会把摘要冲掉。
+ * 这里用会话内暂存把摘要合并回步骤，使等待审批期间仍可见一行选优说明。
+ */
+function mergeCandidateSummaries(run: AgentRun, summaries: Map<number, SqlCandidateSummary>): AgentRun {
+  if (summaries.size === 0) return run;
+  let changed = false;
+  const steps = run.steps.map((step) => {
+    const summary = summaries.get(step.id);
+    if (summary && !step.candidateSummary) {
+      changed = true;
+      return { ...step, candidateSummary: summary };
+    }
+    return step;
+  });
+  return changed ? { ...run, steps } : run;
 }
 
 function upsertNode(
@@ -159,12 +192,17 @@ function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload
           errorCode: null,
           errorMessage: null,
           resultSummary: null,
+          analysisRunId: null,
+          reportId: null,
         };
       });
       return { ...run, steps };
     }
     case 'step.started':
       return patchStep(run, Number(data.stepId), { status: 'RUNNING' });
+    // P14-B：多候选选优摘要（在 step.sql_ready 之前，仅 MULTI 路由推送）。
+    case 'step.sql_candidates_evaluated':
+      return patchStep(run, Number(data.stepId), { candidateSummary: toCandidateSummary(data) });
     case 'step.sql_ready':
       return patchStep(run, Number(data.stepId), {
         sql: String(data.sql ?? ''),
@@ -178,6 +216,8 @@ function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload
       return patchStep(run, Number(data.stepId), {
         repairCount: Number(data.attempt ?? 0),
         status: 'WAITING_APPROVAL',
+        // P14-B：修复后的 SQL 不再是候选竞赛的产物，清掉过期摘要。
+        candidateSummary: null,
       });
     case 'step.succeeded':
       return patchStep(run, Number(data.stepId), {
@@ -193,6 +233,23 @@ function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload
         status: 'FAILED',
         errorCode: (data.code as AgentStep['errorCode']) ?? 'AGENT_STEP_FAILED',
         errorMessage: String(data.message ?? ''),
+      });
+    // P14-C：Python 沙箱分析生命周期（真实工件落库后才发 succeeded）。
+    case 'analysis.started':
+      return patchStep(run, Number(data.stepId), { status: 'RUNNING' });
+    case 'analysis.succeeded':
+      return patchStep(run, Number(data.stepId), {
+        analysisRunId: Number(data.analysisRunId ?? 0) || null,
+      });
+    case 'analysis.failed':
+      return patchStep(run, Number(data.stepId), {
+        errorCode: (data.code as AgentStep['errorCode']) ?? 'ANALYSIS_EXECUTION_ERROR',
+        errorMessage: String(data.message ?? ''),
+      });
+    // P14-C：报告工件就绪（reportId 供详情恢复与前端入口使用）。
+    case 'report.ready':
+      return patchStep(run, Number(data.stepId), {
+        reportId: Number(data.reportId ?? 0) || null,
       });
     // P14-A：显式工具单次执行的受限摘要（与步骤详情保持一致，不伪造 SQL）。
     case 'tool.result': {
@@ -256,6 +313,8 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
   const skipReloadRef = useRef<number | null>(null);
   const runIdRef = useRef<number | null>(null);
   const settledRef = useRef(onSettled);
+  /** P14-B：会话内暂存的候选选优摘要（按 stepId），供服务端详情重取后合并保留。 */
+  const candidateSummariesRef = useRef<Map<number, SqlCandidateSummary>>(new Map());
 
   useEffect(() => {
     settledRef.current = onSettled;
@@ -272,7 +331,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     try {
       const latest = await fetchLatestAgentRun(conversationId);
       if (seqRef.current !== seq) return;
-      setRun(latest);
+      setRun(latest == null ? null : mergeCandidateSummaries(latest, candidateSummariesRef.current));
       setError(null);
     } catch (loadError) {
       if (seqRef.current !== seq) return;
@@ -292,6 +351,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     abortRef.current = null;
     setStreaming(false);
     setError(null);
+    candidateSummariesRef.current.clear();
     void reload();
   }, [conversationId, reload]);
 
@@ -300,13 +360,25 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     if (runId != null && seqRef.current === seq) {
       try {
         const detail = await fetchAgentRun(runId);
-        if (seqRef.current === seq) setRun(detail);
+        if (seqRef.current === seq) setRun(mergeCandidateSummaries(detail, candidateSummariesRef.current));
       } catch (loadError) {
         if (seqRef.current === seq) setError(describeError(loadError));
       }
     }
     setStreaming(false);
     settledRef.current?.();
+  }, []);
+
+  /** 流式事件统一入口：暂存 P14-B 摘要并套用状态变更。 */
+  const handleStreamEvent = useCallback((event: string, data: AgentEventPayload, seq: number) => {
+    if (seqRef.current !== seq) return;
+    if (event === 'step.sql_candidates_evaluated') {
+      candidateSummariesRef.current.set(Number(data.stepId), toCandidateSummary(data));
+    }
+    if (event === 'step.repairing') {
+      candidateSummariesRef.current.delete(Number(data.stepId));
+    }
+    setRun((current) => applyEvent(current, event, data));
   }, []);
 
   const start = useCallback(
@@ -323,6 +395,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
       const seq = seqRef.current + 1;
       seqRef.current = seq;
       runIdRef.current = null;
+      candidateSummariesRef.current.clear();
       setError(null);
       setStreaming(true);
       setRun(skeleton(0, question, targetConversationId));
@@ -341,7 +414,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
               if (event === 'run.started') {
                 runIdRef.current = Number(data.runId);
               }
-              setRun((current) => applyEvent(current, event, data));
+              handleStreamEvent(event, data, seq);
             },
           },
           controller.signal,
@@ -354,7 +427,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
         await finishStream(runIdRef.current, seq);
       }
     },
-    [conversationId, connectionId, finishStream],
+    [conversationId, connectionId, finishStream, handleStreamEvent],
   );
 
   const approve = useCallback(
@@ -372,9 +445,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
           step.id,
           step.sqlVersion,
           {
-            onEvent: (event, data) => {
-              if (seqRef.current === seq) setRun((current) => applyEvent(current, event, data));
-            },
+            onEvent: (event, data) => handleStreamEvent(event, data, seq),
           },
           controller.signal,
         );
@@ -386,7 +457,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
         await finishStream(run.id, seq);
       }
     },
-    [run, finishStream],
+    [run, finishStream, handleStreamEvent],
   );
 
   const reject = useCallback(
@@ -394,7 +465,8 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
       if (run == null) return;
       try {
         await rejectAgentStep(run.id, step.id);
-        setRun(await fetchAgentRun(run.id));
+        const detail = await fetchAgentRun(run.id);
+        setRun(mergeCandidateSummaries(detail, candidateSummariesRef.current));
         settledRef.current?.();
       } catch (actionError) {
         setError(describeError(actionError));
@@ -407,7 +479,8 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     if (run == null) return;
     try {
       await cancelAgentRun(run.id);
-      setRun(await fetchAgentRun(run.id));
+      const detail = await fetchAgentRun(run.id);
+      setRun(mergeCandidateSummaries(detail, candidateSummariesRef.current));
       settledRef.current?.();
     } catch (actionError) {
       setError(describeError(actionError));

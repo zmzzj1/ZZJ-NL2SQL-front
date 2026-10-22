@@ -7,11 +7,17 @@ import { listQueryHistory } from '../api/history';
 import { describeError } from '../api/http';
 import { EmptyState } from '../components/ui/EmptyState';
 
+/** P14-C：由 Agent 时间线跳转过来的待查看工件（一次性焦点，消费后清空）。 */
+export interface ArtifactFocus {
+  kind: 'analysis' | 'report';
+  id: number;
+}
+
 /**
  * P6 分析 + 报告：从真实查询历史选一条已执行的 SQL → 重新执行取真实数据 → 分析 → 图表 → HTML 报告。
  * 分析输入只来自服务端重新校验并执行的受限结果，不伪造图表；报告为服务端净化后的安全 HTML。
  */
-export function ReportPage() {
+export function ReportPage({ focus }: { focus?: ArtifactFocus | null }) {
   const [history, setHistory] = useState<QueryHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +44,33 @@ export function ReportPage() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  // P14-C：时间线跳转进入时，按服务端鉴权接口取回指定真实工件并预览。
+  useEffect(() => {
+    if (focus == null) return;
+    let cancelled = false;
+    setError(null);
+    if (focus.kind === 'analysis') {
+      void fetchAnalysisRun(focus.id)
+        .then((detail) => {
+          if (!cancelled) setAnalysis(detail);
+        })
+        .catch((loadError) => {
+          if (!cancelled) setError(describeError(loadError));
+        });
+    } else {
+      void fetchReport(focus.id)
+        .then((detail) => {
+          if (!cancelled) setPreview(detail);
+        })
+        .catch((loadError) => {
+          if (!cancelled) setError(describeError(loadError));
+        });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [focus]);
 
   const runAnalysis = async (item: QueryHistoryItem) => {
     setSelected(item);
