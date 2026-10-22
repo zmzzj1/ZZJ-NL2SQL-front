@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Activity, KeyRound, RefreshCw, ShieldCheck, Server } from 'lucide-react';
+import { Activity, KeyRound, LayoutDashboard, RefreshCw, Server, ShieldCheck, Users } from 'lucide-react';
 import type { ModelProfile, ModelProvider } from '../api/contract';
 import {
+  adminDashboard,
   adminModelUsage,
   adminOverview,
+  adminUsers,
   createProfile,
   createProvider,
   grantModel,
@@ -13,13 +15,15 @@ import {
   updateProvider,
   upsertQuota,
 } from '../api/model';
+import type { AdminDashboard, AdminUserPage } from '../api/model';
 import { describeError } from '../api/http';
 import { EmptyState } from '../components/ui/EmptyState';
 
-type Tab = 'providers' | 'profiles' | 'monitor' | 'quota';
+type Tab = 'providers' | 'profiles' | 'monitor' | 'quota' | 'users' | 'dashboard';
 
 /**
  * P9 平台管理后台：模型供应商、模型能力档案、LLM 监控、配额治理。
+ * P13-M3A 新增「用户」「概览」两个只读视图（数据由独立管理服务经 RPC 提供）。
  * 全部操作要求平台管理员；Key 只写不回读。
  */
 export function AdminPage() {
@@ -49,6 +53,39 @@ export function AdminPage() {
   const [grantInput, setGrantInput] = useState({ profileId: 0, grantType: 'USER', granteeId: 0 });
   const [quotaInput, setQuotaInput] = useState({ scopeType: 'USER', scopeId: 0, requestsLimit: 0, tokenLimit: 0 });
 
+  // P13-M3A：独立管理服务的只读视图，按需加载，避免非管理员进入页面时被无关错误打扰。
+  const [userPage, setUserPage] = useState<AdminUserPage | null>(null);
+  const [dash, setDash] = useState<AdminDashboard | null>(null);
+  const [adminLoading, setAdminLoading] = useState(false);
+  const [userQuery, setUserQuery] = useState({ page: 1, size: 20, keyword: '' });
+  const [keywordDraft, setKeywordDraft] = useState('');
+
+  const loadUsers = useCallback(async () => {
+    setAdminLoading(true);
+    try {
+      setUserPage(await adminUsers(userQuery));
+      setError(null);
+    } catch (loadError) {
+      setUserPage(null);
+      setError(describeError(loadError));
+    } finally {
+      setAdminLoading(false);
+    }
+  }, [userQuery]);
+
+  const loadDashboard = useCallback(async () => {
+    setAdminLoading(true);
+    try {
+      setDash(await adminDashboard());
+      setError(null);
+    } catch (loadError) {
+      setDash(null);
+      setError(describeError(loadError));
+    } finally {
+      setAdminLoading(false);
+    }
+  }, []);
+
   const reload = useCallback(async () => {
     setLoading(true);
     try {
@@ -67,6 +104,14 @@ export function AdminPage() {
   useEffect(() => {
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    if (tab === 'users') void loadUsers();
+  }, [tab, loadUsers]);
+
+  useEffect(() => {
+    if (tab === 'dashboard') void loadDashboard();
+  }, [tab, loadDashboard]);
 
   const submitProvider = async () => {
     if (!newProvider.name.trim() || !newProvider.baseUrl.trim() || !newProvider.apiKey.trim()) return;
@@ -142,6 +187,8 @@ export function AdminPage() {
             ['profiles', '模型', Activity],
             ['monitor', 'LLM 监控', Activity],
             ['quota', '配额', KeyRound],
+            ['users', '用户', Users],
+            ['dashboard', '概览', LayoutDashboard],
           ] as const
         ).map(([key, label, Icon]) => (
           <button
@@ -405,6 +452,121 @@ export function AdminPage() {
           <button type="button" className="btn-primary px-3 py-1 text-xs" onClick={() => void submitQuota()}>
             设置配额
           </button>
+        </section>
+      ) : null}
+
+      {tab === 'users' ? (
+        <section className="card space-y-3 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-ink">用户</h3>
+            <span className="text-xs text-ink-muted">
+              {userPage ? `共 ${userPage.total} 个账号 · 第 ${userPage.page} 页 / 每页 ${userPage.size}` : ''}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              className="input-field max-w-56"
+              placeholder="按邮箱或昵称搜索"
+              value={keywordDraft}
+              onChange={(e) => setKeywordDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') setUserQuery({ page: 1, size: userQuery.size, keyword: keywordDraft.trim() });
+              }}
+            />
+            <button
+              type="button"
+              className="btn-muted px-2 py-1 text-xs"
+              onClick={() => setUserQuery({ page: 1, size: userQuery.size, keyword: keywordDraft.trim() })}
+            >
+              搜索
+            </button>
+            <button
+              type="button"
+              className="btn-muted px-2 py-1 text-xs"
+              disabled={adminLoading || (userPage?.page ?? 1) <= 1}
+              onClick={() => setUserQuery({ ...userQuery, page: (userPage?.page ?? 1) - 1 })}
+            >
+              上一页
+            </button>
+            <button
+              type="button"
+              className="btn-muted px-2 py-1 text-xs"
+              disabled={adminLoading || !userPage || userPage.page * userPage.size >= userPage.total}
+              onClick={() => setUserQuery({ ...userQuery, page: (userPage?.page ?? 1) + 1 })}
+            >
+              下一页
+            </button>
+          </div>
+          {userPage && userPage.items.length > 0 ? (
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-line text-ink-muted">
+                  <th className="py-1">ID</th>
+                  <th className="py-1">邮箱</th>
+                  <th className="py-1">昵称</th>
+                  <th className="py-1">角色</th>
+                  <th className="py-1">注册时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userPage.items.map((u) => (
+                  <tr key={u.id} className="border-b border-line">
+                    <td className="py-1 text-ink-muted">{u.id}</td>
+                    <td className="py-1 text-ink">{u.email}</td>
+                    <td className="py-1 text-ink">{u.displayName}</td>
+                    <td className="py-1">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] ${
+                          u.role === 'ADMIN' ? 'bg-accent/10 text-accent' : 'text-ink-muted'
+                        }`}
+                      >
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="py-1 text-ink-muted">{u.createdAt ?? '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <EmptyState
+              title={adminLoading ? '加载中…' : '没有匹配的账号'}
+              description="仅展示账号元数据（邮箱、昵称、角色、注册时间），不展示任何凭据。"
+            />
+          )}
+        </section>
+      ) : null}
+
+      {tab === 'dashboard' ? (
+        <section className="card space-y-3 p-4">
+          <h3 className="text-sm font-semibold text-ink">平台概览</h3>
+          {dash ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-4">
+                {[
+                  ['用户总数', dash.userTotal],
+                  ['管理员数', dash.adminTotal],
+                  ['24h 活跃用户', dash.activeUsers24h],
+                  ['SQL 执行总量', dash.queryExecutionsTotal],
+                  ['24h SQL 执行', dash.queryExecutions24h],
+                  ['24h 失败执行', dash.failedExecutions24h],
+                  ['Agent 运行总量', dash.agentRunsTotal],
+                  ['24h Agent 运行', dash.agentRuns24h],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-lg border border-line p-3">
+                    <p className="text-xs text-ink-muted">{String(label)}</p>
+                    <p className="text-lg font-semibold text-ink">{Number(value)}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-ink-muted">统计生成时间：{dash.generatedAt}</p>
+            </>
+          ) : (
+            <EmptyState
+              title={adminLoading ? '加载中…' : '暂无统计数据'}
+              description="统计来自真实业务数据，不做占位填充。"
+            />
+          )}
         </section>
       ) : null}
     </div>

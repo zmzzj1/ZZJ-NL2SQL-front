@@ -107,6 +107,50 @@ export async function listPolicyVersions(policyId: number): Promise<RoutePolicyV
 
 // ---- Admin ----
 
+/** P13-M3A：独立管理服务提供的只读管理查询（Gateway 精确路由到 zzj-admin）。 */
+
+export interface AdminUserSummary {
+  id: number;
+  email: string;
+  displayName: string;
+  role: string;
+  createdAt: string | null;
+}
+
+export interface AdminUserPage {
+  items: AdminUserSummary[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface AdminDashboard {
+  userTotal: number;
+  adminTotal: number;
+  activeUsers24h: number;
+  queryExecutionsTotal: number;
+  queryExecutions24h: number;
+  failedExecutions24h: number;
+  agentRunsTotal: number;
+  agentRuns24h: number;
+  generatedAt: string;
+}
+
+export async function adminUsers(
+  params: { page?: number; size?: number; keyword?: string } = {},
+): Promise<AdminUserPage> {
+  const query = new URLSearchParams();
+  if (params.page) query.set('page', String(params.page));
+  if (params.size) query.set('size', String(params.size));
+  if (params.keyword) query.set('keyword', params.keyword);
+  const suffix = query.toString();
+  return requestJson<AdminUserPage>(`/v1/admin/users${suffix ? `?${suffix}` : ''}`);
+}
+
+export async function adminDashboard(): Promise<AdminDashboard> {
+  return requestJson<AdminDashboard>('/v1/admin/dashboard');
+}
+
 export interface AdminOverview {
   totalCalls: number;
   failedCalls: number;

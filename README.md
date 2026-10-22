@@ -1,6 +1,6 @@
 # QueryForge 前端（真实用户与多数据源 SQL 工作台）
 
-React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6–P8 新增分析报告、工作流、Agent Studio、Skills、工作空间、长期记忆和混合检索；P9 新增模型治理管理后台；P10 新增定时工作流调度与多标签 SQL Console；P11 新增 Agent 统一状态图轨迹、专业角色徽标与 L1–L4 上下文压缩元数据展示。
+React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6–P8 新增分析报告、工作流、Agent Studio、Skills、工作空间、长期记忆和混合检索；P9 新增模型治理管理后台；P10 新增定时工作流调度与多标签 SQL Console；P11 新增 Agent 统一状态图轨迹、专业角色徽标与 L1–L4 上下文压缩元数据展示；P13 新增独立 Admin 服务提供的用户分页和平台统计概览。
 
 ## 已实现
 
@@ -24,7 +24,7 @@ React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身�
 | Skills | 真实：CRUD、发布不可变版本、模板白名单变量校验、版本历史 |
 | 工作空间 | 真实：创建空间、成员角色管理、资源授权与撤销 |
 | 长期记忆 | 真实：个人/空间记忆 CRUD、核验状态、禁用与检索 |
-| 平台管理 | 真实：供应商与模型档案、授权、连接测试、调用监控及配额治理；仅平台管理员可访问 |
+| 平台管理 | 真实：供应商与模型档案、授权、连接测试、调用监控、配额治理、用户分页及平台统计概览；仅平台管理员可访问 |
 | 设置 | 本地主题与 SQL 字号 |
 
 ## 环境要求
@@ -59,7 +59,9 @@ npm run build
 npm run check   # 五项串联
 ```
 
-当前基线：14 个测试文件、72 个用例，lint 0 error / 0 warning；生产构建通过。
+P13-M2 全量基线：14 个测试文件、72 个用例，lint 0 error / 0 warning；生产构建通过。
+
+P13-M3A 已定向验证 `npm run test -- AdminPage.test.tsx`（5/5）和 `npm run typecheck`。
 
 ## P12 集成说明（2026-10-21）
 
@@ -100,6 +102,8 @@ npm run check   # 五项串联
 | GET/POST/PATCH/DELETE | `/api/v1/memories/**` | 长期记忆维护与检索 |
 | GET/POST/PATCH | `/api/v1/model/**` | 模型供应商、能力档案、授权与路由策略 |
 | GET/POST | `/api/v1/admin/**` | 管理概览、模型用量、配额与审计 |
+| GET | `/api/v1/admin/users` | 用户分页、关键词搜索，仅平台管理员 |
+| GET | `/api/v1/admin/dashboard` | 用户与 SQL/Agent 运行统计概览，仅平台管理员 |
 
 错误体统一 `{code,message,requestId}`；前端按 `code` 展示文案。
 
