@@ -2,10 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Activity, KeyRound, LayoutDashboard, RefreshCw, Server, ShieldCheck, Users } from 'lucide-react';
 import type { ModelProfile, ModelProvider } from '../api/contract';
 import {
-  adminDashboard,
   adminModelUsage,
   adminOverview,
-  adminUsers,
   createProfile,
   createProvider,
   grantModel,
@@ -15,7 +13,9 @@ import {
   updateProvider,
   upsertQuota,
 } from '../api/model';
-import type { AdminDashboard, AdminUserPage } from '../api/model';
+import { adminCheck, adminDashboard, adminSetUserQuota, adminSetUserStatus, adminUsers } from '../api/admin';
+import type { AdminDashboard } from '../api/model';
+import type { AdminUserPage, AdminUserSummary } from '../api/admin';
 import { describeError } from '../api/http';
 import { EmptyState } from '../components/ui/EmptyState';
 
@@ -59,6 +59,17 @@ export function AdminPage() {
   const [adminLoading, setAdminLoading] = useState(false);
   const [userQuery, setUserQuery] = useState({ page: 1, size: 20, keyword: '' });
   const [keywordDraft, setKeywordDraft] = useState('');
+
+  // P13-M3B：用户状态/配额操作闭环。
+  const [canManage, setCanManage] = useState(false);
+  const [opLoadingId, setOpLoadingId] = useState<number | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<{
+    id: number;
+    email: string;
+    target: 'ACTIVE' | 'DISABLED';
+  } | null>(null);
+  const [quotaEdit, setQuotaEdit] = useState<{ id: number; email: string; current: number | null } | null>(null);
+  const [quotaDraft, setQuotaDraft] = useState('');
 
   const loadUsers = useCallback(async () => {
     setAdminLoading(true);
@@ -106,7 +117,13 @@ export function AdminPage() {
   }, [reload]);
 
   useEffect(() => {
-    if (tab === 'users') void loadUsers();
+    if (tab === 'users') {
+      void loadUsers();
+      // 平台管理权限自检：决定前端是否展示操作入口；非管理员后端会以 403 兜底。
+      adminCheck()
+        .then((res) => setCanManage(res.isAdmin))
+        .catch(() => setCanManage(false));
+    }
   }, [tab, loadUsers]);
 
   useEffect(() => {
@@ -157,6 +174,55 @@ export function AdminPage() {
       setError(null);
     } catch (submitError) {
       setError(describeError(submitError));
+    }
+  };
+
+  // P13-M3B：用户状态/配额操作。
+
+  const requestStatusToggle = (u: AdminUserSummary) => {
+    const current = u.status === 'DISABLED' ? 'DISABLED' : 'ACTIVE';
+    const target: 'ACTIVE' | 'DISABLED' = current === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
+    setPendingStatus({ id: u.id, email: u.email, target });
+  };
+
+  const confirmStatusToggle = async () => {
+    if (!pendingStatus) return;
+    setOpLoadingId(pendingStatus.id);
+    setError(null);
+    try {
+      await adminSetUserStatus(pendingStatus.id, pendingStatus.target);
+      setPendingStatus(null);
+      await loadUsers();
+    } catch (opError) {
+      setError(describeError(opError));
+    } finally {
+      setOpLoadingId(null);
+    }
+  };
+
+  const openQuotaEdit = (u: AdminUserSummary) => {
+    setQuotaEdit({ id: u.id, email: u.email, current: u.tokenQuota ?? 0 });
+    setQuotaDraft(String(u.tokenQuota ?? 0));
+    setError(null);
+  };
+
+  const saveQuota = async () => {
+    if (!quotaEdit) return;
+    const parsed = Number(quotaDraft);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      setError('Token 配额必须为非负整数');
+      return;
+    }
+    setOpLoadingId(quotaEdit.id);
+    setError(null);
+    try {
+      await adminSetUserQuota(quotaEdit.id, parsed);
+      setQuotaEdit(null);
+      await loadUsers();
+    } catch (opError) {
+      setError(describeError(opError));
+    } finally {
+      setOpLoadingId(null);
     }
   };
 
@@ -497,6 +563,32 @@ export function AdminPage() {
               下一页
             </button>
           </div>
+          {pendingStatus ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs">
+              <span className="text-danger">
+                确认将用户 {pendingStatus.email}（#{pendingStatus.id}）
+                {pendingStatus.target === 'DISABLED' ? '停用' : '启用'}？
+                {pendingStatus.target === 'DISABLED' ? '停用后该用户现有会话立即失效。' : ''}
+              </span>
+              <button
+                type="button"
+                className="btn-primary px-2 py-0.5 text-[11px]"
+                disabled={opLoadingId !== null}
+                onClick={() => void confirmStatusToggle()}
+              >
+                {opLoadingId === pendingStatus.id ? '处理中…' : '确认'}
+              </button>
+              <button
+                type="button"
+                className="btn-muted px-2 py-0.5 text-[11px]"
+                disabled={opLoadingId !== null}
+                onClick={() => setPendingStatus(null)}
+              >
+                取消
+              </button>
+            </div>
+          ) : null}
+
           {userPage && userPage.items.length > 0 ? (
             <table className="w-full text-left text-xs">
               <thead>
@@ -505,35 +597,112 @@ export function AdminPage() {
                   <th className="py-1">邮箱</th>
                   <th className="py-1">昵称</th>
                   <th className="py-1">角色</th>
+                  <th className="py-1">状态</th>
+                  <th className="py-1">Token 配额</th>
                   <th className="py-1">注册时间</th>
+                  {canManage ? <th className="py-1">操作</th> : null}
                 </tr>
               </thead>
               <tbody>
-                {userPage.items.map((u) => (
-                  <tr key={u.id} className="border-b border-line">
-                    <td className="py-1 text-ink-muted">{u.id}</td>
-                    <td className="py-1 text-ink">{u.email}</td>
-                    <td className="py-1 text-ink">{u.displayName}</td>
-                    <td className="py-1">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] ${
-                          u.role === 'ADMIN' ? 'bg-accent/10 text-accent' : 'text-ink-muted'
-                        }`}
-                      >
-                        {u.role}
-                      </span>
-                    </td>
-                    <td className="py-1 text-ink-muted">{u.createdAt ?? '-'}</td>
-                  </tr>
-                ))}
+                {userPage.items.map((u) => {
+                  const disabled = u.status === 'DISABLED';
+                  const isOp = opLoadingId === u.id;
+                  return (
+                    <tr key={u.id} className="border-b border-line">
+                      <td className="py-1 text-ink-muted">{u.id}</td>
+                      <td className="py-1 text-ink">{u.email}</td>
+                      <td className="py-1 text-ink">{u.displayName}</td>
+                      <td className="py-1">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] ${
+                            u.role === 'ADMIN' ? 'bg-accent/10 text-accent' : 'text-ink-muted'
+                          }`}
+                        >
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="py-1">
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] ${
+                            disabled ? 'bg-danger/10 text-danger' : 'bg-success/10 text-success'
+                          }`}
+                        >
+                          {disabled ? '停用' : '启用'}
+                        </span>
+                      </td>
+                      <td className="py-1 text-ink-muted">
+                        {u.tokenQuota && u.tokenQuota > 0 ? u.tokenQuota : '未限制'}
+                      </td>
+                      <td className="py-1 text-ink-muted">{u.createdAt ?? '-'}</td>
+                      {canManage ? (
+                        <td className="py-1">
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              className="btn-muted px-2 py-0.5 text-[11px]"
+                              disabled={isOp || pendingStatus !== null}
+                              onClick={() => requestStatusToggle(u)}
+                            >
+                              {disabled ? '启用' : '停用'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-muted px-2 py-0.5 text-[11px]"
+                              disabled={isOp || pendingStatus !== null}
+                              onClick={() => openQuotaEdit(u)}
+                            >
+                              配额
+                            </button>
+                          </div>
+                        </td>
+                      ) : null}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (
             <EmptyState
               title={adminLoading ? '加载中…' : '没有匹配的账号'}
-              description="仅展示账号元数据（邮箱、昵称、角色、注册时间），不展示任何凭据。"
+              description="仅展示账号元数据（邮箱、昵称、角色、状态、配额），不展示任何凭据。"
             />
           )}
+
+          {quotaEdit ? (
+            <div className="flex flex-wrap items-end gap-3 rounded-lg border border-line bg-accent/5 px-3 py-3">
+              <div className="space-y-1">
+                <p className="text-xs text-ink">
+                  为 {quotaEdit.email}（#{quotaEdit.id}）设置 Token 配额
+                </p>
+                <p className="text-[11px] text-ink-muted">
+                  当前：{quotaEdit.current && quotaEdit.current > 0 ? quotaEdit.current : '未限制'}（0 表示不单独限制）
+                </p>
+                <input
+                  className="input-field w-48"
+                  type="number"
+                  min={0}
+                  value={quotaDraft}
+                  onChange={(e) => setQuotaDraft(e.target.value)}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn-primary px-3 py-1 text-xs"
+                disabled={opLoadingId !== null}
+                onClick={() => void saveQuota()}
+              >
+                {opLoadingId === quotaEdit.id ? '保存中…' : '保存配额'}
+              </button>
+              <button
+                type="button"
+                className="btn-muted px-3 py-1 text-xs"
+                disabled={opLoadingId !== null}
+                onClick={() => setQuotaEdit(null)}
+              >
+                取消
+              </button>
+            </div>
+          ) : null}
         </section>
       ) : null}
 

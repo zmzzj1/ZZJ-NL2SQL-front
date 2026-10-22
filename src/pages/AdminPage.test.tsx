@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AdminPage } from './AdminPage';
-import { adminDashboard, adminUsers } from '../api/model';
+import { adminCheck, adminDashboard, adminUsers } from '../api/admin';
 import { ApiError } from '../api/http';
 import type * as ModelModule from '../api/model';
+import type * as AdminModule from '../api/admin';
 
 vi.mock('../api/model', async () => {
   const actual = await vi.importActual<typeof ModelModule>('../api/model');
@@ -14,16 +15,37 @@ vi.mock('../api/model', async () => {
     listProfiles: vi.fn().mockResolvedValue([]),
     adminOverview: vi.fn().mockResolvedValue({ totalCalls: 0, failedCalls: 0, activeModels: 0 }),
     adminModelUsage: vi.fn().mockResolvedValue({ models: [], failures: [], since: '' }),
+  };
+});
+
+vi.mock('../api/admin', async () => {
+  const actual = await vi.importActual<typeof AdminModule>('../api/admin');
+  return {
+    ...actual,
+    adminCheck: vi.fn().mockResolvedValue({ isAdmin: true, role: 'ADMIN' }),
     adminUsers: vi.fn(),
     adminDashboard: vi.fn(),
+    adminSetUserStatus: vi.fn(),
+    adminSetUserQuota: vi.fn(),
   };
 });
 
 const usersMock = vi.mocked(adminUsers);
 const dashboardMock = vi.mocked(adminDashboard);
+const checkMock = vi.mocked(adminCheck);
 
 const USER_PAGE = {
-  items: [{ id: 7, email: 'admin@example.com', displayName: 'Admin', role: 'ADMIN', createdAt: '2026-10-22 09:00:00' }],
+  items: [
+    {
+      id: 7,
+      email: 'admin@example.com',
+      displayName: 'Admin',
+      role: 'ADMIN',
+      createdAt: '2026-10-22 09:00:00',
+      status: 'ACTIVE',
+      tokenQuota: null,
+    },
+  ],
   total: 1,
   page: 1,
   size: 20,
@@ -43,6 +65,7 @@ const DASHBOARD = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  checkMock.mockResolvedValue({ isAdmin: true, role: 'ADMIN' });
 });
 
 describe('AdminPage 用户与概览视图', () => {
