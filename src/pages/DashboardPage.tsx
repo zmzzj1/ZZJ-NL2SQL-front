@@ -3,6 +3,7 @@ import { Database, Loader2, Plus, RefreshCw, Settings2, Trash2 } from 'lucide-re
 import { ApiError, describeError } from '../api/http';
 import { EmptyState } from '../components/ui/EmptyState';
 import { AgentTimeline } from '../features/agent/AgentTimeline';
+import { ToolPicker, type ToolPickerState } from '../features/agent/ToolPicker';
 import { useAgentRun } from '../features/agent/useAgentRun';
 import { useConnections } from '../features/connections/useConnections';
 import { useConversations } from '../features/conversations/useConversations';
@@ -39,6 +40,12 @@ export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) 
   const [conversationError, setConversationError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [mode, setMode] = useState<'single' | 'agent'>('single');
+  // P14-A：用户在输入框显式选择的工具（仅在点击发送后提交）。
+  const [toolPicker, setToolPicker] = useState<ToolPickerState>({
+    selection: null,
+    validationError: null,
+  });
+  const [toolError, setToolError] = useState<string | null>(null);
 
   const activeConversation = conversations.items.find((item) => item.id === conversationId) ?? null;
   const connectionMissing =
@@ -98,17 +105,28 @@ export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) 
   const handleAgentSend = async () => {
     const question = workspace.input.trim();
     if (!question || selectedId === null || agent.streaming || connectionMissing) return;
+    // P14-A：参数未填齐时不发起请求，由前端先拦截；后端仍是最终验证方。
+    if (toolPicker.validationError) {
+      setToolError(toolPicker.validationError);
+      return;
+    }
+    setToolError(null);
+    const toolInvocation = toolPicker.selection;
     workspace.setInput('');
     if (conversationId === null) {
       try {
         const created = await conversations.create(selectedId, question.slice(0, 60));
-        await agent.start(question, { conversationId: created.id, onCreated: setConversationId });
+        await agent.start(question, {
+          conversationId: created.id,
+          onCreated: setConversationId,
+          toolInvocation,
+        });
       } catch (sendError) {
         setConversationError(describeError(sendError));
       }
       return;
     }
-    await agent.start(question);
+    await agent.start(question, { toolInvocation });
   };
 
   const handleConnectionChange = (value: string) => {
@@ -314,6 +332,12 @@ export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) 
         </p>
       ) : null}
 
+      {toolError ? (
+        <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
+          {toolError}
+        </p>
+      ) : null}
+
       {connectionMissing ? (
         <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-xs text-danger">
           该会话关联的数据源已被删除，只能查看历史消息；如需继续查询，请新建会话并选择有效数据源。
@@ -337,6 +361,17 @@ export function DashboardPage({ fontSize, onGoToDatabase }: DashboardPageProps) 
           onSend={mode === 'agent' ? () => void handleAgentSend() : workspace.sendMessage}
           onCancel={mode === 'agent' ? () => void agent.cancel() : workspace.cancelGeneration}
           onClear={startNewConversation}
+          toolSlot={
+            mode === 'agent' ? (
+              <ToolPicker
+                disabled={connectionMissing || agent.streaming}
+                onChange={(state) => {
+                  setToolPicker(state);
+                  if (!state.validationError) setToolError(null);
+                }}
+              />
+            ) : undefined
+          }
         />
 
         <section

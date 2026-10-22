@@ -1,4 +1,4 @@
-import type { AgentRun, AgentStep } from './contract';
+import type { AgentRun, AgentStep, ToolInvocationRequest } from './contract';
 import { API_BASE, ApiError, csrfHeaders, notifyUnauthorized, requestJson, toApiError } from './http';
 import { createSseParser } from './sse';
 
@@ -7,6 +7,14 @@ export type AgentEventHandler = (event: string, data: AgentEventPayload) => void
 
 interface StreamHandlers {
   onEvent: AgentEventHandler;
+}
+
+/** P14-A：开始运行的请求体；toolInvocation 可选，缺失时行为与之前完全一致。 */
+export interface StartAgentRunRequest {
+  conversationId: number;
+  connectionId: number;
+  userInput: string;
+  toolInvocation?: ToolInvocationRequest | null;
 }
 
 async function stream(path: string, body: unknown, handlers: StreamHandlers, signal: AbortSignal) {
@@ -60,11 +68,14 @@ async function stream(path: string, body: unknown, handlers: StreamHandlers, sig
 }
 
 export function streamAgentRun(
-  request: { conversationId: number; connectionId: number; userInput: string },
+  request: StartAgentRunRequest,
   handlers: StreamHandlers,
   signal: AbortSignal,
 ): Promise<void> {
-  return stream('/v1/agent/runs/stream', request, handlers, signal);
+  const body: StartAgentRunRequest = request.toolInvocation
+    ? { ...request, toolInvocation: request.toolInvocation }
+    : { conversationId: request.conversationId, connectionId: request.connectionId, userInput: request.userInput };
+  return stream('/v1/agent/runs/stream', body, handlers, signal);
 }
 
 export function approveAgentStep(
@@ -100,4 +111,4 @@ export async function fetchLatestAgentRun(conversationId: number): Promise<Agent
   return run ?? null;
 }
 
-export type { AgentRun, AgentStep };
+export type { AgentRun, AgentStep, ToolInvocationRequest };

@@ -252,7 +252,22 @@ export interface QueryHistoryItem {
 export type AgentRunStatus =
   'PLANNING' | 'WAITING_APPROVAL' | 'RUNNING' | 'CLARIFYING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
 
-export type AgentRoute = 'CHITCHAT' | 'CLARIFY' | 'KNOWLEDGE' | 'SIMPLE' | 'COMPLEX';
+export type AgentRoute =
+  | 'CHITCHAT'
+  | 'CLARIFY'
+  | 'KNOWLEDGE'
+  | 'SIMPLE'
+  | 'COMPLEX'
+  /** P14-A：分类不可用时的安全降级（仍走 Planner）。 */
+  | 'MEDIUM'
+  /** P14-A：用户在输入框显式选择工具的快捷路径。 */
+  | 'TOOL_INVOCATION';
+
+/** P14-A：一次显式工具调用的请求体（toolName/args 仅为结构，真实目录来自 GET /v1/tools）。 */
+export interface ToolInvocationRequest {
+  toolName: string;
+  args?: Record<string, unknown>;
+}
 
 export interface RoleActivity {
   role: string;

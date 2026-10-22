@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Eraser, Loader2, Send, Sparkles, Square } from 'lucide-react';
 import type { MessageStatus } from '../../api/contract';
 import type { ChatMessage } from '../../types';
@@ -32,6 +32,8 @@ interface ChatPanelProps {
   onSend: () => void;
   onCancel: () => void;
   onClear: () => void;
+  /** P14-A：Agent 模式的工具选择插槽（单步 SQL 模式不渲染）。 */
+  toolSlot?: ReactNode;
 }
 
 /** 左侧对话区：只负责消息展示与输入交互，数据与请求由 useSqlWorkspace 管理。 */
@@ -47,6 +49,7 @@ export function ChatPanel({
   onSend,
   onCancel,
   onClear,
+  toolSlot,
 }: ChatPanelProps) {
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -158,6 +161,8 @@ export function ChatPanel({
             </button>
           ))}
         </div>
+
+        {toolSlot ? <div className="mb-2">{toolSlot}</div> : null}
 
         <label className="sr-only" htmlFor="dashboard-input">
           提问内容

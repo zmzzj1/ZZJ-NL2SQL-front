@@ -19,6 +19,7 @@ import type {
   GraphNodeState,
   GraphNodeStatus,
   KnowledgeSourceRef,
+  ToolInvocationRequest,
 } from '../../api/contract';
 import { describeError } from '../../api/http';
 
@@ -29,6 +30,13 @@ interface AgentRunOptions {
   connectionId: number | null;
   /** 运行状态变化后刷新会话消息（Agent 会写入用户问题与总结）。 */
   onSettled?: () => void;
+}
+
+/** P14-A：显式工具选择（仅在用户点击发送后才随运行请求提交）。 */
+export interface StartOptions {
+  conversationId?: number;
+  onCreated?: (id: number) => void;
+  toolInvocation?: ToolInvocationRequest | null;
 }
 
 function skeleton(runId: number, question: string, conversationId: number): AgentRun {
@@ -186,6 +194,20 @@ function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload
         errorCode: (data.code as AgentStep['errorCode']) ?? 'AGENT_STEP_FAILED',
         errorMessage: String(data.message ?? ''),
       });
+    // P14-A：显式工具单次执行的受限摘要（与步骤详情保持一致，不伪造 SQL）。
+    case 'tool.result': {
+      const stepId = Number(data.stepId);
+      const status = String(data.status ?? '');
+      const summary = String(data.summary ?? '');
+      const patch: Partial<AgentStep> = { resultSummary: summary };
+      if (status === 'SUCCEEDED') {
+        patch.status = 'SUCCEEDED';
+      } else if (status === 'FAILED') {
+        patch.status = 'FAILED';
+        patch.errorMessage = summary;
+      }
+      return patchStep(run, stepId, patch);
+    }
     case 'run.completed':
       return { ...run, status: 'COMPLETED', summary: String(data.summary ?? '') };
     case 'run.failed':
@@ -288,7 +310,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
   }, []);
 
   const start = useCallback(
-    async (question: string, options?: { conversationId?: number; onCreated?: (id: number) => void }) => {
+    async (question: string, options?: StartOptions) => {
       const targetConversationId = options?.conversationId ?? conversationId;
       if (targetConversationId == null || connectionId == null) return;
       if (options?.conversationId != null && options.conversationId !== conversationId) {
@@ -307,7 +329,12 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
 
       try {
         await streamAgentRun(
-          { conversationId: targetConversationId, connectionId, userInput: question },
+          {
+            conversationId: targetConversationId,
+            connectionId,
+            userInput: question,
+            ...(options?.toolInvocation ? { toolInvocation: options.toolInvocation } : {}),
+          },
           {
             onEvent: (event, data) => {
               if (seqRef.current !== seq) return;

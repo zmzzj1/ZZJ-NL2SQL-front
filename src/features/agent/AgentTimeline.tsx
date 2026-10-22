@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Loader2, ShieldCheck, XCircle } from 'lucide-react';
 import type {
   AgentConfigResolved,
+  AgentRoute,
   AgentRun,
   AgentRunStatus,
   AgentStep,
@@ -20,6 +21,17 @@ const RUN_LABEL: Record<AgentRunStatus, string> = {
   COMPLETED: '已完成',
   FAILED: '失败',
   CANCELED: '已取消',
+};
+
+/** P14-A：Manager 路由中文标签（含 MEDIUM 降级与 TOOL_INVOCATION 快捷路径）。 */
+const ROUTE_LABEL: Record<AgentRoute, string> = {
+  CHITCHAT: '闲聊',
+  CLARIFY: '待澄清',
+  KNOWLEDGE: '知识解释',
+  SIMPLE: '单步查询',
+  COMPLEX: '多步分析',
+  MEDIUM: '分类降级',
+  TOOL_INVOCATION: '显式工具',
 };
 
 const STEP_LABEL: Record<AgentStepStatus, string> = {
@@ -254,7 +266,7 @@ export function AgentTimeline({
             <p className="text-xs font-semibold text-ink">{run.question}</p>
             <p className="mt-1 text-[11px] text-ink-muted">
               数据源：{run.connectionName || '—'} · 运行 #{run.id}
-              {run.route ? ` · 路由：${run.route}` : ''} · LLM 调用 {run.llmCallCount} 次
+              {run.route ? ` · 路由：${ROUTE_LABEL[run.route] ?? run.route}` : ''} · LLM 调用 {run.llmCallCount} 次
             </p>
             {run.roleActivities.length > 0 ? (
               <p className="mt-1 flex flex-wrap gap-1">
@@ -297,6 +309,11 @@ export function AgentTimeline({
                       {step.agentRole ? (
                         <span className="rounded-full border border-line bg-panel-muted px-1.5 py-0.5 text-[10px] text-ink-muted">
                           {ROLE_LABEL[step.agentRole] ?? step.agentRole}
+                        </span>
+                      ) : null}
+                      {!step.sql && step.agentRole === 'TOOL_ASSISTANT' ? (
+                        <span className="rounded-full border border-line bg-panel-muted px-1.5 py-0.5 text-[10px] text-ink-muted">
+                          非 SQL 工具步骤
                         </span>
                       ) : null}
                       <span
