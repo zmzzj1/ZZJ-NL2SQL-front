@@ -398,4 +398,173 @@ describe('AgentTimeline', () => {
     expect(screen.queryByText(/分析运行 #/)).not.toBeInTheDocument();
     expect(screen.queryByText(/报告 #/)).not.toBeInTheDocument();
   });
+
+  // ------------------------------------------------------------ P14-D 计划审核
+
+  it('P14-D 等待计划审核时展示计划步骤与批准/拒绝按钮', async () => {
+    const onDecidePlan = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AgentTimeline
+        run={run({
+          status: 'WAITING_PLAN_REVIEW',
+          planReview: {
+            triggered: true,
+            awaiting: true,
+            hitlVersion: 2,
+            status: 'AWAITING',
+            reason: '计划包含跨库聚合',
+            rejectionCount: 1,
+            remainingRejections: 2,
+            autoConfirm: false,
+          },
+        })}
+        loading={false}
+        streaming={false}
+        error={null}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onDecidePlan={onDecidePlan}
+        onCancel={vi.fn()}
+        onReload={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('等待计划审核')).toBeInTheDocument();
+    expect(screen.getByText('计划需要人工审核')).toBeInTheDocument();
+    expect(screen.getByText('版本 v2')).toBeInTheDocument();
+    expect(screen.getByText('原因：计划包含跨库聚合')).toBeInTheDocument();
+    expect(screen.getByText(/已拒绝 1 \/ 3 次/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /批准并执行计划/ }));
+    expect(onDecidePlan).toHaveBeenCalledWith(true, '');
+  });
+
+  it('P14-D 拒绝时把用户填写的修改意见回传', async () => {
+    const onDecidePlan = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <AgentTimeline
+        run={run({
+          status: 'WAITING_PLAN_REVIEW',
+          planReview: {
+            triggered: true,
+            awaiting: true,
+            hitlVersion: 1,
+            status: 'AWAITING',
+            reason: '高风险',
+            rejectionCount: 0,
+            remainingRejections: 3,
+            autoConfirm: false,
+          },
+        })}
+        loading={false}
+        streaming={false}
+        error={null}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onDecidePlan={onDecidePlan}
+        onCancel={vi.fn()}
+        onReload={vi.fn()}
+      />,
+    );
+
+    await user.type(screen.getByLabelText(/拒绝时的修改意见/), '改为按月统计');
+    await user.click(screen.getByRole('button', { name: /拒绝并重新规划/ }));
+    expect(onDecidePlan).toHaveBeenCalledWith(false, '改为按月统计');
+  });
+
+  it('P14-D 非等待态（已批准）不渲染审核操作按钮', () => {
+    const onDecidePlan = vi.fn();
+    render(
+      <AgentTimeline
+        run={run({
+          status: 'RUNNING',
+          planReview: {
+            triggered: true,
+            awaiting: false,
+            hitlVersion: 3,
+            status: 'APPROVED',
+            reason: '',
+            rejectionCount: 0,
+            remainingRejections: 3,
+            autoConfirm: false,
+          },
+        })}
+        loading={false}
+        streaming={false}
+        error={null}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onDecidePlan={onDecidePlan}
+        onCancel={vi.fn()}
+        onReload={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText('计划需要人工审核')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /批准并执行计划/ })).not.toBeInTheDocument();
+    expect(onDecidePlan).not.toHaveBeenCalled();
+  });
+
+  it('P14-D 刷新恢复：详情带等待审核状态时重建审核卡', () => {
+    render(
+      <AgentTimeline
+        run={run({
+          status: 'WAITING_PLAN_REVIEW',
+          planReview: {
+            triggered: true,
+            awaiting: true,
+            hitlVersion: 5,
+            status: 'AWAITING',
+            reason: '刷新后仍需审核',
+            rejectionCount: 2,
+            remainingRejections: 1,
+            autoConfirm: false,
+          },
+        })}
+        loading={false}
+        streaming={false}
+        error={null}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onDecidePlan={vi.fn()}
+        onCancel={vi.fn()}
+        onReload={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('等待计划审核')).toBeInTheDocument();
+    expect(screen.getByText('版本 v5')).toBeInTheDocument();
+    expect(screen.getByText(/剩余可拒绝 1 次/)).toBeInTheDocument();
+  });
+
+  it('P14-D 流式处理中禁用审核按钮，避免重复提交', () => {
+    render(
+      <AgentTimeline
+        run={run({
+          status: 'WAITING_PLAN_REVIEW',
+          planReview: {
+            triggered: true,
+            awaiting: true,
+            hitlVersion: 1,
+            status: 'AWAITING',
+            reason: '风险',
+            rejectionCount: 0,
+            remainingRejections: 3,
+            autoConfirm: false,
+          },
+        })}
+        loading={false}
+        streaming={true}
+        error={null}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onDecidePlan={vi.fn()}
+        onCancel={vi.fn()}
+        onReload={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole('button', { name: /批准并执行计划/ })).not.toBeInTheDocument();
+  });
 });

@@ -1,6 +1,6 @@
 # QueryForge 前端（真实用户与多数据源 SQL 工作台）
 
-React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6–P8 新增分析报告、工作流、Agent Studio、Skills、工作空间、长期记忆和混合检索；P9 新增模型治理管理后台；P10 新增定时工作流调度与多标签 SQL Console；P11 新增 Agent 统一状态图轨迹、专业角色徽标与 L1–L4 上下文压缩元数据展示；P13 新增独立 Admin 服务提供的用户分页、平台统计、账号启停和用户 Token 配额维护；P14-A 新增 Agent 工具选择、参数表单、显式工具运行和安全结果时间线；P14-B/P14-C 新增 SQL 候选评分、分析与报告步骤状态和产物入口展示。
+React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6–P8 新增分析报告、工作流、Agent Studio、Skills、工作空间、长期记忆和混合检索；P9 新增模型治理管理后台；P10 新增定时工作流调度与多标签 SQL Console；P11 新增 Agent 统一状态图轨迹、专业角色徽标与 L1–L4 上下文压缩元数据展示；P13 新增独立 Admin 服务提供的用户分页、平台统计、账号启停和用户 Token 配额维护；P14-A 新增 Agent 工具选择、参数表单、显式工具运行和安全结果时间线；P14-B/P14-C 新增 SQL 候选评分、分析与报告步骤状态和产物入口展示；P14-D 新增复杂计划人工审核、拒绝意见与重新规划交互。
 
 ## 已实现
 
@@ -13,7 +13,7 @@ React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身�
 | 切换数据源 | 取消旧 SSE、清空旧 SQL/结果，生成与执行共用 connectionId |
 | 会话与历史 | 真实：会话恢复/删除，查询历史筛选、详情与删除 |
 | SQL Console | 真实：多标签 SQL、独立数据源与结果、Schema 浏览、CSV 安全导出 |
-| Agent | 真实接口：自适应路由、规划时间线、SQL 多候选评分与唯一审批、逐步确认/拒绝、取消与运行恢复；闲聊、澄清与分类降级显示真实状态 |
+| Agent | 真实接口：自适应路由、规划时间线、可选复杂计划人工审核与拒绝后重规划、SQL 多候选评分与唯一审批、逐步确认/拒绝、取消与运行恢复；闲聊、澄清与分类降级显示真实状态 |
 | Agent 显式工具 | 真实：从服务端工具目录选择工具、按输入 Schema 填参、发送一次受控调用，并在时间线展示非 SQL 工具步骤与脱敏摘要 |
 | Agent 状态图轨迹 | 真实：按 SSE `node.*` 事件展示统一状态图节点流，可展开状态图快照（历史恢复） |
 | Agent 专业角色 | 真实：步骤显示后端 RoleAssigner 选定的专业角色徽标（与后端持久化角色一致） |
@@ -67,6 +67,8 @@ P13-M3A 已定向验证 `npm run test -- AdminPage.test.tsx`（5/5）和 `npm ru
 P14-A 全量验证：`npm run check` 通过；15 个测试文件、77 个用例全部通过，Prettier、ESLint、TypeScript 与生产构建均通过（2026-10-23 实跑）。
 
 P14-B/P14-C 全量验证：`npm run check` 通过；16 个测试文件、88 个用例全部通过，Prettier、ESLint、TypeScript 与生产构建均通过（2026-10-23 实跑）。
+
+P14-D 全量验证：`npm run check` 通过；17 个测试文件、97 个用例全部通过，Prettier、ESLint、TypeScript 与生产构建均通过（2026-10-23 实跑）。
 
 ## P12 集成说明（2026-10-21）
 

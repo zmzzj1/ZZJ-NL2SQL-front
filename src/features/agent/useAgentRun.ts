@@ -6,25 +6,34 @@ import {
   fetchLatestAgentRun,
   rejectAgentStep,
   streamAgentRun,
+  streamPlanDecision,
 } from '../../api/agent';
 import type { AgentEventPayload } from '../../api/agent';
 import type {
   AgentConfigResolved,
   AgentRun,
-  AgentRoute,
-  AgentRunStatus,
   AgentStep,
-  ContextCompactedMeta,
   GraphNodeName,
   GraphNodeState,
   GraphNodeStatus,
   KnowledgeSourceRef,
+  PlanReviewStep,
+  PlanReviewView,
+  AgentRoute,
+  AgentRunStatus,
+  ContextCompactedMeta,
   SqlCandidateSummary,
   ToolInvocationRequest,
 } from '../../api/contract';
 import { describeError } from '../../api/http';
 
-const ACTIVE_STATUS: AgentRunStatus[] = ['PLANNING', 'WAITING_APPROVAL', 'RUNNING', 'CLARIFYING'];
+const ACTIVE_STATUS: AgentRunStatus[] = [
+  'PLANNING',
+  'WAITING_APPROVAL',
+  'RUNNING',
+  'CLARIFYING',
+  'WAITING_PLAN_REVIEW',
+];
 
 interface AgentRunOptions {
   conversationId: number | null;
@@ -38,6 +47,11 @@ export interface StartOptions {
   conversationId?: number;
   onCreated?: (id: number) => void;
   toolInvocation?: ToolInvocationRequest | null;
+  /**
+   * P14-D：计划级审核模式。false=复杂计划生成后由 Gate 判断是否需人工审核；
+   * 缺省/true=跳过计划级审核（**不**跳过 SQL 逐版本确认）。
+   */
+  autoConfirm?: boolean;
 }
 
 function skeleton(runId: number, question: string, conversationId: number): AgentRun {
@@ -62,6 +76,7 @@ function skeleton(runId: number, question: string, conversationId: number): Agen
     graphNodes: [],
     contextCompacted: null,
     configResolved: null,
+    planReview: null,
   };
 }
 
@@ -120,6 +135,86 @@ function upsertNode(
     };
   }
   return { ...run, graphNodes: [...nodes, { node, status, revision }] };
+}
+
+/** P14-D：计划审核视图的初始形状（仅在首次收到审核事件时用于展开字段）。 */
+function emptyPlanReview(): PlanReviewView {
+  return {
+    triggered: false,
+    awaiting: false,
+    hitlVersion: 0,
+    status: null,
+    reason: '',
+    rejectionCount: 0,
+    remainingRejections: 3,
+    autoConfirm: true,
+  };
+}
+
+/**
+ * P14-D：把 SSE 步骤摘要映射为可展示的步骤。事件缺失 steps 时保留当前已渲染的步骤，
+ * 避免刷新/重连瞬间把审核卡清空。
+ */
+function toReviewSteps(raw: unknown, current: AgentStep[]): AgentStep[] {
+  if (!Array.isArray(raw)) return current;
+  const steps = raw.map((item) => item as PlanReviewStep);
+  if (steps.length === 0) return current;
+  return steps.map((step) => ({
+    id: step.stepId,
+    sequence: step.sequence,
+    objective: step.objective,
+    dependsOn: step.dependsOn ?? null,
+    status: 'PENDING',
+    sql: null,
+    sqlVersion: 0,
+    agentRole: step.role ?? null,
+    approvalStatus: 'PENDING',
+    repairCount: 0,
+    rowCount: null,
+    truncated: null,
+    errorCode: null,
+    errorMessage: null,
+    resultSummary: null,
+    analysisRunId: null,
+    reportId: null,
+  }));
+}
+
+/** 后端 GET /runs/{id} 返回的 planReview 线格式（与 SSE 事件字段不同）。 */
+interface PlanReviewWire {
+  required?: boolean;
+  status?: string | null;
+  hitlVersion?: number;
+  reason?: string;
+  rejectionCount?: number;
+  autoConfirm?: boolean;
+}
+
+/**
+ * P14-D：把详情接口的计划审核视图归一化为前端可操作视图。
+ * 只有 Run 真正处于 WAITING_PLAN_REVIEW 且状态为 AWAITING 时才允许提交决定，
+ * 避免已取消/已终结的 Run 在刷新后显示可点的假批准按钮。
+ */
+export function normalizePlanReview(raw: PlanReviewView | null | undefined, runStatus: string): PlanReviewView | null {
+  if (raw == null) return null;
+  const wire = raw as unknown as PlanReviewWire;
+  const status = wire.status ?? null;
+  const rejectionCount = Number(wire.rejectionCount ?? 0);
+  return {
+    triggered: wire.required === true || status != null,
+    awaiting: runStatus === 'WAITING_PLAN_REVIEW' && status === 'AWAITING',
+    hitlVersion: Number(wire.hitlVersion ?? 0),
+    status,
+    reason: wire.reason ?? '',
+    rejectionCount,
+    remainingRejections: Math.max(0, 3 - rejectionCount),
+    autoConfirm: wire.autoConfirm === true,
+  };
+}
+
+/** 详情接口返回值进入前端状态前先归一化计划审核视图。 */
+function adoptRun(run: AgentRun): AgentRun {
+  return { ...run, planReview: normalizePlanReview(run.planReview, run.status) };
 }
 
 function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload): AgentRun | null {
@@ -285,6 +380,81 @@ function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload
     }
     case 'clarify.required':
       return { ...run, status: 'CLARIFYING', errorMessage: String(data.message ?? '') };
+    // P14-D：计划级风险 Gate 评估结果（无论是否需要审核都如实推送）。
+    case 'plan.review_evaluated':
+      return {
+        ...run,
+        planReview: {
+          ...(run.planReview ?? emptyPlanReview()),
+          triggered: true,
+          status: data.required === true ? 'AWAITING' : 'NOT_REQUIRED',
+          reason: String(data.reasonCode ?? ''),
+        },
+      };
+    // P14-D：进入等待人工审核。计划已落盘，刷新后可原样恢复审核卡。
+    case 'plan.review_required': {
+      const hitlVersion = Number(data.hitlVersion ?? 0);
+      const rejectionCount = Number(data.rejectionCount ?? 0);
+      return {
+        ...run,
+        status: 'WAITING_PLAN_REVIEW',
+        steps: toReviewSteps(data.steps, run.steps),
+        planReview: {
+          triggered: true,
+          awaiting: true,
+          hitlVersion,
+          status: 'AWAITING',
+          reason: String(data.reason ?? ''),
+          rejectionCount,
+          remainingRejections: Math.max(0, 3 - rejectionCount),
+          autoConfirm: false,
+        },
+      };
+    }
+    // P14-D：服务端已领取审核决定；等待中的卡片立即退出可操作态，避免重复提交。
+    case 'plan.review_decided':
+      return {
+        ...run,
+        planReview:
+          run.planReview == null
+            ? run.planReview
+            : {
+                ...run.planReview,
+                awaiting: false,
+                hitlVersion: Number(data.hitlVersion ?? run.planReview.hitlVersion),
+                rejectionCount: Number(data.rejectionCount ?? run.planReview.rejectionCount),
+                status: data.approved === true ? 'APPROVED' : 'REPLAN_REQUIRED',
+              },
+      };
+    // P14-D：拒绝后已重新规划，展示新计划版本并继续等待审核。
+    case 'plan.replanned': {
+      const hitlVersion = Number(data.newHitlVersion ?? 0);
+      const rejectionCount = Number(data.rejectionCount ?? 0);
+      return {
+        ...run,
+        status: 'WAITING_PLAN_REVIEW',
+        steps: toReviewSteps(data.steps, run.steps),
+        planReview: {
+          triggered: true,
+          awaiting: true,
+          hitlVersion,
+          status: 'AWAITING',
+          reason: '',
+          rejectionCount,
+          remainingRejections: Math.max(0, 3 - rejectionCount),
+          autoConfirm: false,
+        },
+      };
+    }
+    // P14-D：审核无法继续（刷新后运行已终结或版本冲突），如实显示服务端错误。
+    case 'plan.review_failed':
+      return {
+        ...run,
+        status: 'FAILED',
+        errorCode: (data.code as AgentRun['errorCode']) ?? 'AGENT_STATE_CONFLICT',
+        errorMessage: String(data.message ?? ''),
+        planReview: run.planReview == null ? null : { ...run.planReview, awaiting: false },
+      };
     case 'agent.completed': {
       const role = String(data.role ?? '');
       if (!role) return run;
@@ -331,7 +501,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     try {
       const latest = await fetchLatestAgentRun(conversationId);
       if (seqRef.current !== seq) return;
-      setRun(latest == null ? null : mergeCandidateSummaries(latest, candidateSummariesRef.current));
+      setRun(latest == null ? null : mergeCandidateSummaries(adoptRun(latest), candidateSummariesRef.current));
       setError(null);
     } catch (loadError) {
       if (seqRef.current !== seq) return;
@@ -360,7 +530,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     if (runId != null && seqRef.current === seq) {
       try {
         const detail = await fetchAgentRun(runId);
-        if (seqRef.current === seq) setRun(mergeCandidateSummaries(detail, candidateSummariesRef.current));
+        if (seqRef.current === seq) setRun(mergeCandidateSummaries(adoptRun(detail), candidateSummariesRef.current));
       } catch (loadError) {
         if (seqRef.current === seq) setError(describeError(loadError));
       }
@@ -407,6 +577,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
             connectionId,
             userInput: question,
             ...(options?.toolInvocation ? { toolInvocation: options.toolInvocation } : {}),
+            ...(options?.autoConfirm === false ? { autoConfirm: false } : {}),
           },
           {
             onEvent: (event, data) => {
@@ -466,7 +637,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
       try {
         await rejectAgentStep(run.id, step.id);
         const detail = await fetchAgentRun(run.id);
-        setRun(mergeCandidateSummaries(detail, candidateSummariesRef.current));
+        setRun(mergeCandidateSummaries(adoptRun(detail), candidateSummariesRef.current));
         settledRef.current?.();
       } catch (actionError) {
         setError(describeError(actionError));
@@ -475,12 +646,60 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     [run],
   );
 
+  /**
+   * P14-D：提交计划级审核决定（批准/拒绝）。
+   *
+   * <p>{@code hitlVersion} 必须取自服务端返回的当前待审核版本（刷新恢复时来自详情接口），
+   * 前端不自行推断；重复提交或版本冲突由服务端一次性领取拒绝，不会二次执行计划。
+   */
+  const decidePlan = useCallback(
+    async (approved: boolean, feedback?: string) => {
+      if (run == null) return;
+      const hitlVersion = run.planReview?.hitlVersion;
+      if (hitlVersion == null) {
+        setError('当前运行没有待审核的计划');
+        return;
+      }
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const seq = seqRef.current + 1;
+      seqRef.current = seq;
+      setError(null);
+      setStreaming(true);
+      // 先乐观退出等待态：服务端确认后若重规划会再次进入等待（plan.replanned）。
+      setRun((current) =>
+        current?.planReview == null ? current : { ...current, planReview: { ...current.planReview, awaiting: false } },
+      );
+      try {
+        await streamPlanDecision(
+          run.id,
+          {
+            approved,
+            ...(approved ? {} : { feedback: feedback ?? null }),
+            hitlVersion,
+          },
+          {
+            onEvent: (event, data) => handleStreamEvent(event, data, seq),
+          },
+          controller.signal,
+        );
+      } catch (streamError) {
+        if (seqRef.current !== seq) return;
+        if (streamError instanceof DOMException && streamError.name === 'AbortError') return;
+        setError(describeError(streamError));
+      } finally {
+        await finishStream(run.id, seq);
+      }
+    },
+    [run, finishStream, handleStreamEvent],
+  );
+
   const cancel = useCallback(async () => {
     if (run == null) return;
     try {
       await cancelAgentRun(run.id);
       const detail = await fetchAgentRun(run.id);
-      setRun(mergeCandidateSummaries(detail, candidateSummariesRef.current));
+      setRun(mergeCandidateSummaries(adoptRun(detail), candidateSummariesRef.current));
       settledRef.current?.();
     } catch (actionError) {
       setError(describeError(actionError));
@@ -497,6 +716,7 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     start,
     approve,
     reject,
+    decidePlan,
     cancel,
     reload,
   };

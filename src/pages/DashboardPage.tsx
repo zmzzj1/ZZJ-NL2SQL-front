@@ -48,6 +48,11 @@ export function DashboardPage({ fontSize, onGoToDatabase, onGoToArtifact }: Dash
     validationError: null,
   });
   const [toolError, setToolError] = useState<string | null>(null);
+  /**
+   * P14-D：计划级审核开关。默认 true（跳过计划级审核，与旧行为一致），
+   * 勾选"复杂计划先人工审核"后置为 false，仅对本次新建的运行生效。
+   */
+  const [autoConfirm, setAutoConfirm] = useState(true);
 
   const activeConversation = conversations.items.find((item) => item.id === conversationId) ?? null;
   const connectionMissing =
@@ -122,13 +127,14 @@ export function DashboardPage({ fontSize, onGoToDatabase, onGoToArtifact }: Dash
           conversationId: created.id,
           onCreated: setConversationId,
           toolInvocation,
+          autoConfirm,
         });
       } catch (sendError) {
         setConversationError(describeError(sendError));
       }
       return;
     }
-    await agent.start(question, { toolInvocation });
+    await agent.start(question, { toolInvocation, autoConfirm });
   };
 
   const handleConnectionChange = (value: string) => {
@@ -365,13 +371,29 @@ export function DashboardPage({ fontSize, onGoToDatabase, onGoToArtifact }: Dash
           onClear={startNewConversation}
           toolSlot={
             mode === 'agent' ? (
-              <ToolPicker
-                disabled={connectionMissing || agent.streaming}
-                onChange={(state) => {
-                  setToolPicker(state);
-                  if (!state.validationError) setToolError(null);
-                }}
-              />
+              <div className="flex flex-wrap items-center gap-3">
+                <ToolPicker
+                  disabled={connectionMissing || agent.streaming}
+                  onChange={(state) => {
+                    setToolPicker(state);
+                    if (!state.validationError) setToolError(null);
+                  }}
+                />
+                <label
+                  className="flex cursor-pointer items-center gap-1.5 text-[11px] text-ink-muted"
+                  htmlFor="agent-plan-review-toggle"
+                >
+                  <input
+                    id="agent-plan-review-toggle"
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-line"
+                    checked={!autoConfirm}
+                    disabled={connectionMissing || agent.streaming}
+                    onChange={(event) => setAutoConfirm(!event.target.checked)}
+                  />
+                  复杂计划先人工审核
+                </label>
+              </div>
             ) : undefined
           }
         />
@@ -388,6 +410,7 @@ export function DashboardPage({ fontSize, onGoToDatabase, onGoToArtifact }: Dash
               error={agent.error}
               onApprove={(step) => void agent.approve(step)}
               onReject={(step) => void agent.reject(step)}
+              onDecidePlan={(approved, feedback) => void agent.decidePlan(approved, feedback)}
               onCancel={() => void agent.cancel()}
               onReload={() => void agent.reload()}
               onOpenAnalysis={onGoToArtifact ? (analysisRunId) => onGoToArtifact('analysis', analysisRunId) : undefined}

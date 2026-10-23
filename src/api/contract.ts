@@ -250,7 +250,15 @@ export interface QueryHistoryItem {
 }
 
 export type AgentRunStatus =
-  'PLANNING' | 'WAITING_APPROVAL' | 'RUNNING' | 'CLARIFYING' | 'COMPLETED' | 'FAILED' | 'CANCELED';
+  | 'PLANNING'
+  | 'WAITING_APPROVAL'
+  | 'RUNNING'
+  | 'CLARIFYING'
+  /** P14-D：等待人工审核计划（运行非终态，未派发任何执行）。 */
+  | 'WAITING_PLAN_REVIEW'
+  | 'COMPLETED'
+  | 'FAILED'
+  | 'CANCELED';
 
 export type AgentRoute =
   | 'CHITCHAT'
@@ -298,6 +306,10 @@ export type GraphNodeName =
   | 'REPORT_GENERATION'
   | 'WAITING_CLARIFICATION'
   | 'WAITING_SQL_APPROVAL'
+  /** P14-D：计划级风险审核门禁节点。 */
+  | 'HITL_GATE'
+  /** P14-D：等待人工审核计划节点。 */
+  | 'WAITING_PLAN_REVIEW'
   | 'KNOWLEDGE'
   | 'COMPLETED'
   | 'FAILED'
@@ -393,6 +405,40 @@ export interface AgentRun {
   contextCompacted?: ContextCompactedMeta | null;
   /** P11：本轮解析的 Agent 配置摘要（UI 运行时态）。 */
   configResolved?: AgentConfigResolved | null;
+  /** P14-D：计划级审核状态（服务端权威，刷新后据此恢复审核卡片）。 */
+  planReview?: PlanReviewView | null;
+}
+
+/**
+ * P14-D：计划级审核视图。{@code awaiting} 为真表示当前有等待人工审核的计划版本，
+ * 前端应展示计划审核卡并允许提交批准/拒绝决定。
+ */
+export interface PlanReviewView {
+  /** 是否已触发计划级审核流程（autoConfirm=false 时才有意义）。 */
+  triggered: boolean;
+  /** 当前是否正在等待人工审核。 */
+  awaiting: boolean;
+  /** 当前待审核的计划版本；提交决定时必须带回。 */
+  hitlVersion: number;
+  /** 审核状态：SKIPPED/NOT_REQUIRED/AWAITING/APPROVED/REPLAN_REQUIRED/REJECTED/EVAL_UNAVAILABLE。 */
+  status: string | null;
+  /** 触发审核的原因（模型给出或降级原因码）。 */
+  reason: string;
+  /** 本次运行已拒绝次数，达到 3 次将终结运行。 */
+  rejectionCount: number;
+  /** 剩余可拒绝次数。 */
+  remainingRejections: number;
+  /** 本次运行创建时固定的自动确认模式。 */
+  autoConfirm: boolean;
+}
+
+/** P14-D：计划审核卡展示的步骤摘要。 */
+export interface PlanReviewStep {
+  stepId: number;
+  sequence: number;
+  objective: string;
+  role: string | null;
+  dependsOn: number | null;
 }
 
 export interface StartEventData {

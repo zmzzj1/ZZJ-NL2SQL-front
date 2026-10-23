@@ -9,12 +9,29 @@ interface StreamHandlers {
   onEvent: AgentEventHandler;
 }
 
-/** P14-A：开始运行的请求体；toolInvocation 可选，缺失时行为与之前完全一致。 */
+/**
+ * P14-A：开始运行的请求体；toolInvocation 可选，缺失时行为与之前完全一致。
+ *
+ * <p>P14-D：{@code autoConfirm} 为 false 时，复杂计划在生成后先过计划级风险 Gate，
+ * 命中风险则暂停等待人工审核；true（默认、缺省）时跳过计划级审核，
+ * 但**不**跳过具体 SQL 的逐版本确认。该值在创建运行即固定，后续重规划不会改变。
+ */
 export interface StartAgentRunRequest {
   conversationId: number;
   connectionId: number;
   userInput: string;
   toolInvocation?: ToolInvocationRequest | null;
+  autoConfirm?: boolean | null;
+}
+
+/** P14-D：计划级审核决定请求体。 */
+export interface PlanDecisionRequestPayload {
+  /** true=批准当前计划版本并续跑；false=拒绝并带上反馈重新规划。 */
+  approved: boolean;
+  /** 拒绝时的修改意见（最长 4000 字符），批准时忽略。 */
+  feedback?: string | null;
+  /** 当前待审核的计划版本，用于一次性领取与冲突检测。 */
+  hitlVersion: number;
 }
 
 async function stream(path: string, body: unknown, handlers: StreamHandlers, signal: AbortSignal) {
@@ -91,6 +108,20 @@ export function approveAgentStep(
     handlers,
     signal,
   );
+}
+
+/**
+ * P14-D：提交计划级审核决定。批准则从已落盘的 PENDING 步骤续跑；
+ * 拒绝则累计拒绝次数并带上反馈重新规划（第 3 次拒绝终结运行）。
+ * 同一计划版本只有一个决定能胜出（Redis 令牌 + MySQL CAS），重复提交由服务端拒绝。
+ */
+export function streamPlanDecision(
+  runId: number,
+  request: PlanDecisionRequestPayload,
+  handlers: StreamHandlers,
+  signal: AbortSignal,
+): Promise<void> {
+  return stream(`/v1/agent/runs/${runId}/plan/continue/stream`, request, handlers, signal);
 }
 
 export async function rejectAgentStep(runId: number, stepId: number): Promise<void> {

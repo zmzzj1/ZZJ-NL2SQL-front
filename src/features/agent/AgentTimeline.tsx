@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { BarChart3, FileText, Loader2, ShieldCheck, XCircle } from 'lucide-react';
+import { BarChart3, CheckCircle2, ClipboardList, FileText, Loader2, ShieldCheck, XCircle } from 'lucide-react';
 import type {
   AgentConfigResolved,
   AgentRoute,
@@ -10,6 +10,7 @@ import type {
   ContextCompactedMeta,
   GraphNodeName,
   GraphNodeState,
+  PlanReviewView,
   SqlCandidateSummary,
 } from '../../api/contract';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -18,6 +19,7 @@ const RUN_LABEL: Record<AgentRunStatus, string> = {
   PLANNING: '规划中',
   CLARIFYING: '等待澄清',
   WAITING_APPROVAL: '等待确认',
+  WAITING_PLAN_REVIEW: '等待计划审核',
   RUNNING: '执行中',
   COMPLETED: '已完成',
   FAILED: '失败',
@@ -57,6 +59,10 @@ const NODE_LABEL: Record<GraphNodeName, string> = {
   REPORT_GENERATION: '生成报告',
   WAITING_CLARIFICATION: '等待澄清',
   WAITING_SQL_APPROVAL: '等待 SQL 审批',
+  /** P14-D：计划级风险审核门禁。 */
+  HITL_GATE: '计划风险门禁',
+  /** P14-D：等待人工审核计划。 */
+  WAITING_PLAN_REVIEW: '等待计划审核',
   KNOWLEDGE: '知识检索',
   COMPLETED: '完成',
   FAILED: '失败',
@@ -199,6 +205,120 @@ function CandidateSummaryView({ summary }: { summary: SqlCandidateSummary }) {
   );
 }
 
+/** P14-D：计划状态中文标签。 */
+const PLAN_REVIEW_LABEL: Record<string, string> = {
+  SKIPPED: '已跳过计划审核',
+  NOT_REQUIRED: '评估无需人工审核',
+  AWAITING: '等待人工审核',
+  APPROVED: '计划已批准',
+  REPLAN_REQUIRED: '需重新规划',
+  REJECTED: '计划已被拒绝',
+  EVAL_UNAVAILABLE: '风险 Gate 不可用（已降级放行）',
+  PLAN_REVIEW_CONFLICT: '计划审核状态冲突',
+};
+
+/**
+ * P14-D：计划级审核卡。仅在服务端权威状态为"等待审核"时渲染操作按钮，
+ * 刷新恢复后直接来自详情接口，不依赖前端内存中的中间态。
+ */
+function PlanReviewCard({
+  review,
+  steps,
+  streaming,
+  onDecide,
+}: {
+  review: PlanReviewView;
+  steps: AgentStep[];
+  streaming: boolean;
+  onDecide: (approved: boolean, feedback: string) => void;
+}) {
+  const [feedback, setFeedback] = useState('');
+  const [submitting, setSubmitting] = useState<'approve' | 'reject' | null>(null);
+  const disabled = streaming || submitting != null || !review.awaiting;
+
+  function submit(approved: boolean) {
+    setSubmitting(approved ? 'approve' : 'reject');
+    onDecide(approved, feedback.trim());
+  }
+
+  return (
+    <div className="rounded-xl border border-warning/40 bg-warning/10 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <ClipboardList className="h-4 w-4 text-warning" aria-hidden="true" />
+        <p className="text-xs font-semibold text-ink">计划需要人工审核</p>
+        <span className="rounded-full border border-line bg-panel-muted px-1.5 py-0.5 text-[10px] text-ink-muted">
+          版本 v{review.hitlVersion}
+        </span>
+        {review.status ? (
+          <span className="rounded-full border border-line bg-panel-muted px-1.5 py-0.5 text-[10px] text-ink-muted">
+            {PLAN_REVIEW_LABEL[review.status] ?? review.status}
+          </span>
+        ) : null}
+      </div>
+
+      {review.reason ? <p className="mt-1.5 text-[11px] text-ink-muted">原因：{review.reason}</p> : null}
+      <p className="mt-1 text-[11px] text-ink-muted">
+        已拒绝 {review.rejectionCount} / 3 次，剩余可拒绝 {review.remainingRejections} 次。第 3 次拒绝将终结本次运行。
+      </p>
+
+      {steps.length > 0 ? (
+        <ol className="mt-2 space-y-1">
+          {steps.map((step) => (
+            <li key={step.id} className="flex items-start gap-2 text-[11px] text-ink-muted">
+              <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-panel-muted text-[10px] font-semibold text-ink">
+                {step.sequence}
+              </span>
+              <span className="min-w-0 flex-1">
+                {step.objective}
+                {step.agentRole ? (
+                  <span className="ml-1 rounded border border-line px-1 py-0.5 text-[10px]">
+                    {ROLE_LABEL[step.agentRole] ?? step.agentRole}
+                  </span>
+                ) : null}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
+
+      <label className="mt-2 block text-[11px] font-semibold text-ink-muted" htmlFor="plan-review-feedback">
+        拒绝时的修改意见（可选）
+      </label>
+      <textarea
+        id="plan-review-feedback"
+        className="mt-1 w-full rounded-lg border border-line bg-panel px-2 py-1.5 text-xs text-ink"
+        rows={3}
+        maxLength={4000}
+        value={feedback}
+        placeholder="例如：不要按天聚合，改为按月；只统计已支付订单。"
+        onChange={(event) => setFeedback(event.target.value)}
+        disabled={disabled}
+      />
+
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className="btn-primary px-3 py-1.5 text-xs"
+          onClick={() => submit(true)}
+          disabled={disabled}
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+          批准并执行计划
+        </button>
+        <button
+          type="button"
+          className="btn-secondary px-3 py-1.5 text-xs text-danger"
+          onClick={() => submit(false)}
+          disabled={disabled}
+        >
+          <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+          拒绝并重新规划
+        </button>
+      </div>
+    </div>
+  );
+}
+
 interface AgentTimelineProps {
   run: AgentRun | null;
   loading: boolean;
@@ -206,6 +326,8 @@ interface AgentTimelineProps {
   error: string | null;
   onApprove: (step: AgentStep) => void;
   onReject: (step: AgentStep) => void;
+  /** P14-D：提交计划级审核决定；仅在服务端处于等待审核态时可用。 */
+  onDecidePlan?: (approved: boolean, feedback: string) => void;
   onCancel: () => void;
   onReload: () => void;
   /** P14-C：跳转到已有图表组件查看真实分析工件（未提供时仅展示 ID）。 */
@@ -269,13 +391,19 @@ export function AgentTimeline({
   error,
   onApprove,
   onReject,
+  onDecidePlan,
   onCancel,
   onReload,
   onOpenAnalysis,
   onOpenReport,
 }: AgentTimelineProps) {
-  const active = run != null && ['PLANNING', 'WAITING_APPROVAL', 'RUNNING'].includes(run.status);
+  const active =
+    run != null &&
+    ['PLANNING', 'WAITING_APPROVAL', 'RUNNING', 'WAITING_PLAN_REVIEW', 'CLARIFYING'].includes(run.status);
   const [showGraphState, setShowGraphState] = useState(false);
+  /** P14-D：等待审核时展示的计划来自服务端详情；只有 awaiting 为真才渲染操作区。 */
+  const planReview = run?.planReview ?? null;
+  const awaitingPlanReview = planReview?.awaiting === true && !streaming;
 
   return (
     <section aria-label="Agent 执行时间线" className="card p-4">
@@ -365,6 +493,9 @@ export function AgentTimeline({
               </p>
             ) : null}
             {run.configResolved ? <ConfigResolvedView config={run.configResolved} /> : null}
+            {awaitingPlanReview && planReview && onDecidePlan ? (
+              <PlanReviewCard review={planReview} steps={run.steps} streaming={streaming} onDecide={onDecidePlan} />
+            ) : null}
             <GraphStateFlow nodes={run.graphNodes ?? []} />
             {run.contextCompacted ? <ContextCompactionView meta={run.contextCompacted} /> : null}
           </div>
