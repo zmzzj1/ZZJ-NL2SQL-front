@@ -15,6 +15,7 @@ export type PageKey =
   | 'workflow'
   | 'studio'
   | 'skills'
+  | 'mcp'
   | 'workspace'
   | 'memory'
   | 'admin';

@@ -1,6 +1,6 @@
 # QueryForge 前端（真实用户与多数据源 SQL 工作台）
 
-React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6–P8 新增分析报告、工作流、Agent Studio、Skills、工作空间、长期记忆和混合检索；P9 新增模型治理管理后台；P10 新增定时工作流调度与多标签 SQL Console；P11 新增 Agent 统一状态图轨迹、专业角色徽标与 L1–L4 上下文压缩元数据展示；P13 新增独立 Admin 服务提供的用户分页、平台统计、账号启停和用户 Token 配额维护；P14-A 新增 Agent 工具选择、参数表单、显式工具运行和安全结果时间线；P14-B/P14-C 新增 SQL 候选评分、分析与报告步骤状态和产物入口展示；P14-D 新增复杂计划人工审核、拒绝意见与重新规划交互。
+React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身份与连接、会话与查询历史、SQL Agent 多步时间线（确认/纠错/恢复）、Manager 路由与多角色展示、业务知识页（CRUD + 检索预览）；P6–P8 新增分析报告、工作流、Agent Studio、Skills、工作空间、长期记忆和混合检索；P9 新增模型治理管理后台；P10 新增定时工作流调度与多标签 SQL Console；P11 新增 Agent 统一状态图轨迹、专业角色徽标与 L1–L4 上下文压缩元数据展示；P13 新增独立 Admin 服务提供的用户分页、平台统计、账号启停和用户 Token 配额维护；P14-A 新增 Agent 工具选择、参数表单、显式工具运行和安全结果时间线；P14-B/P14-C 新增 SQL 候选评分、分析与报告步骤状态和产物入口展示；P14-D/P14-E 新增复杂计划人工审核、拒绝意见与重新规划交互、用户级 MCP 服务管理和计划工具步骤展示；P14-ARCH-01 新增线程与 checkpoint 状态展示及中断恢复反馈。
 
 ## 已实现
 
@@ -15,7 +15,8 @@ React 18 + TypeScript + Vite 6 + Tailwind CSS 4。已完成 P2–P5：真实身�
 | SQL Console | 真实：多标签 SQL、独立数据源与结果、Schema 浏览、CSV 安全导出 |
 | Agent | 真实接口：自适应路由、规划时间线、可选复杂计划人工审核与拒绝后重规划、SQL 多候选评分与唯一审批、逐步确认/拒绝、取消与运行恢复；闲聊、澄清与分类降级显示真实状态 |
 | Agent 显式工具 | 真实：从服务端工具目录选择工具、按输入 Schema 填参、发送一次受控调用，并在时间线展示非 SQL 工具步骤与脱敏摘要 |
-| Agent 状态图轨迹 | 真实：按 SSE `node.*` 事件展示统一状态图节点流，可展开状态图快照（历史恢复） |
+| MCP 服务管理 | 真实：按用户创建、编辑、连接、断开、刷新状态和删除 MCP 服务；只把服务端真实发现的工具加入 Agent 工具目录 |
+| Agent 状态图轨迹 | 真实：按 SSE `node.*` 事件展示统一状态图节点流，可展开状态图快照，并展示线程与 checkpoint 恢复状态 |
 | Agent 专业角色 | 真实：步骤显示后端 RoleAssigner 选定的专业角色徽标（与后端持久化角色一致） |
 | 上下文压缩 | 真实：展示 L1–L4 分层压缩的脱敏元数据（输入 Token 估算、保留/丢弃、上下文指纹） |
 | 业务知识 | 真实：术语/SQL 示例 CRUD，按连接与工作空间执行关键词、向量或混合检索 |
@@ -49,6 +50,12 @@ npm run dev -- --port 5174 --strictPort
 
 打开 `http://127.0.0.1:5174/`，先注册账号，再到「数据库连接」创建 MySQL 数据源。
 
+## Docker 镜像
+
+根目录 `Dockerfile` 使用 Node 22 构建生产资源，再由 Nginx 提供 SPA 页面；`docker/nginx.conf` 将同源
+`/api/**` 请求代理到 Compose 网络中的 `zzj-gateway:8080`，并关闭代理缓冲以支持 SSE。完整环境由后端仓库的
+Compose 编排统一构建，浏览器入口仍为 `http://127.0.0.1:5174/`。
+
 ## 质量检查
 
 ```bash
@@ -69,6 +76,10 @@ P14-A 全量验证：`npm run check` 通过；15 个测试文件、77 个用例�
 P14-B/P14-C 全量验证：`npm run check` 通过；16 个测试文件、88 个用例全部通过，Prettier、ESLint、TypeScript 与生产构建均通过（2026-10-23 实跑）。
 
 P14-D 全量验证：`npm run check` 通过；17 个测试文件、97 个用例全部通过，Prettier、ESLint、TypeScript 与生产构建均通过（2026-10-23 实跑）。
+
+P14-E 全量验证：`npm run check` 通过；19 个测试文件、104 个用例全部通过，Prettier、ESLint、TypeScript 与生产构建均通过（2026-10-23 实跑）。
+
+P14-ARCH-01 全量验证：`npm run check` 通过；19 个测试文件、107 个用例全部通过，Prettier、ESLint、TypeScript 与生产构建均通过（2026-10-24 实跑）。
 
 ## P12 集成说明（2026-10-21）
 

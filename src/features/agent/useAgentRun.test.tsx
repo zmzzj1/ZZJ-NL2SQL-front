@@ -299,3 +299,53 @@ describe('useAgentRun（P14-C Code/Report 工件事件）', () => {
     expect(step?.errorMessage).toBe('Python 分析执行失败');
   });
 });
+
+describe('useAgentRun（P14-ARCH-01 Graph threadId 与 Worker 阶段）', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.fetchLatestAgentRun.mockResolvedValue(null);
+    mocks.fetchAgentRun.mockResolvedValue(serverDetail());
+  });
+
+  it('run.started 携带真实 Graph threadId 并进入运行状态', async () => {
+    mocks.streamAgentRun.mockImplementation(async (_request, handlers) => {
+      handlers.onEvent('run.started', { runId: 5, conversationId: 7, threadId: 'thread-arch-01' });
+      handlers.onEvent('node.started', { runId: 5, node: 'MANAGER', revision: '2' });
+      handlers.onEvent('run.completed', { runId: 5, summary: '完成' });
+    });
+
+    const { result } = renderHook(() => useAgentRun({ conversationId: 7, connectionId: 10 }));
+
+    await act(async () => {
+      await result.current.start('统计订单数');
+    });
+
+    // threadId 只做展示与日志关联：不得用于自行恢复或绕过服务端鉴权。
+    expect(result.current.run?.threadId).toBe('thread-arch-01');
+  });
+
+  it('worker.thinking 只记录真实阶段与有界尝试次数，不产生思考内容', async () => {
+    mocks.streamAgentRun.mockImplementation(async (_request, handlers) => {
+      handlers.onEvent('run.started', { runId: 5, threadId: 'thread-arch-01' });
+      handlers.onEvent('plan.ready', { steps: [{ stepId: 11, sequence: 1, objective: '按月统计订单数量' }] });
+      handlers.onEvent('worker.thinking', {
+        runId: 5,
+        stepId: 11,
+        role: 'DATA_SCIENTIST',
+        phase: 'acting',
+        attemptId: 'attempt-1',
+        attempt: 2,
+      });
+      handlers.onEvent('step.succeeded', { stepId: 11, rowCount: 1, truncated: false, summary: '返回 1 行' });
+    });
+
+    const { result } = renderHook(() => useAgentRun({ conversationId: 7, connectionId: 10 }));
+
+    await act(async () => {
+      await result.current.start('统计订单数');
+    });
+
+    const worker = result.current.run?.steps[0]?.worker;
+    expect(worker).toEqual({ role: 'DATA_SCIENTIST', phase: 'acting', attemptId: 'attempt-1', attempt: 2 });
+  });
+});

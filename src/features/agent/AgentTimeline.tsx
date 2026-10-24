@@ -12,6 +12,7 @@ import type {
   GraphNodeState,
   PlanReviewView,
   SqlCandidateSummary,
+  WorkerProgress,
 } from '../../api/contract';
 import { EmptyState } from '../../components/ui/EmptyState';
 
@@ -180,6 +181,35 @@ function ConfigResolvedView({ config }: { config: AgentConfigResolved }) {
       记忆 {config.memoryEnabled ? '开' : '关'}
     </p>
   );
+}
+
+/**
+ * P14-ARCH-01：Worker 阶段徽标（Thinking/Review/Act/Verify 的真实阶段）。
+ * 只显示阶段与有界尝试次数，不显示"思考内容"——没有模型推理流时不伪造任何内容。
+ */
+const WORKER_PHASE_LABEL: Record<string, string> = {
+  thinking: 'Thinking',
+  acting: 'Act',
+  verified: 'Verify 通过',
+  verify_failed: 'Verify 未通过',
+};
+
+export function WorkerPhaseBadge({ worker }: { worker: WorkerProgress }) {
+  return (
+    <span
+      className="rounded-full border border-line bg-panel-muted px-1.5 py-0.5 text-[10px] text-ink-muted"
+      title={`Worker ${worker.role} · ${worker.phase}${worker.attemptId ? ` · ${worker.attemptId}` : ''}`}
+    >
+      {WORKER_PHASE_LABEL[worker.phase] ?? worker.phase}
+      {worker.attempt > 1 ? `（第 ${worker.attempt} 次尝试）` : ''}
+    </span>
+  );
+}
+
+/** P14-ARCH-01：Graph threadId 只做短摘要展示，不可作为权限或恢复凭证。 */
+function threadLabel(threadId: string | null | undefined): string {
+  if (!threadId) return '';
+  return threadId.length > 8 ? `${threadId.slice(0, 8)}…` : threadId;
 }
 
 /** P14-C：非 SQL 步骤的角色徽标（Code/Report/工具），避免把分析步骤误当 SQL 查询。 */
@@ -469,6 +499,7 @@ export function AgentTimeline({
             <p className="mt-1 text-[11px] text-ink-muted">
               数据源：{run.connectionName || '—'} · 运行 #{run.id}
               {run.route ? ` · 路由：${ROUTE_LABEL[run.route] ?? run.route}` : ''} · LLM 调用 {run.llmCallCount} 次
+              {run.threadId ? ` · Graph 线程 ${threadLabel(run.threadId)}` : ''}
             </p>
             {run.roleActivities.length > 0 ? (
               <p className="mt-1 flex flex-wrap gap-1">
@@ -527,6 +558,8 @@ export function AgentTimeline({
                       >
                         {STEP_LABEL[step.status]}
                       </span>
+                      {/* P14-ARCH-01：真实 Worker 阶段（阶段与尝试次数，非思考内容）。 */}
+                      {step.worker ? <WorkerPhaseBadge worker={step.worker} /> : null}
                     </div>
 
                     {step.repairCount > 0 ? (
@@ -536,6 +569,14 @@ export function AgentTimeline({
                     ) : null}
 
                     {step.candidateSummary ? <CandidateSummaryView summary={step.candidateSummary} /> : null}
+
+                    {step.repair ? (
+                      <p className="mt-1.5 text-[11px] text-ink-muted">
+                        工具参数修复中（第 {step.repair.attempt} 次）
+                        {step.repair.diagnostic ? `：${step.repair.diagnostic}` : ''}
+                        ；修复后仍需真实调用验证，成功与否以工具返回为准。
+                      </p>
+                    ) : null}
 
                     {step.sql ? (
                       <div className="mt-2">

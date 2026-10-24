@@ -77,6 +77,7 @@ function skeleton(runId: number, question: string, conversationId: number): Agen
     contextCompacted: null,
     configResolved: null,
     planReview: null,
+    threadId: null,
   };
 }
 
@@ -117,6 +118,23 @@ function mergeCandidateSummaries(run: AgentRun, summaries: Map<number, SqlCandid
     return step;
   });
   return changed ? { ...run, steps } : run;
+}
+
+/**
+ * P14-ARCH-01：详情重取会冲掉 UI 运行时态（Graph threadId、Worker 阶段）。
+ * 服务端事实优先（有值即用服务端的），缺失时保留本次流内已确认的真实状态。
+ */
+function mergeRuntimeState(run: AgentRun, previous: AgentRun | null): AgentRun {
+  if (previous == null) return run;
+  const merged: AgentRun = { ...run, threadId: run.threadId ?? previous.threadId ?? null };
+  if (previous.steps.length > 0 && run.steps.length > 0) {
+    merged.steps = run.steps.map((step) => {
+      const prior = previous.steps.find((item) => item.id === step.id);
+      if (prior == null || step.worker != null) return step;
+      return { ...step, worker: prior.worker ?? null };
+    });
+  }
+  return merged;
 }
 
 function upsertNode(
@@ -220,8 +238,13 @@ function adoptRun(run: AgentRun): AgentRun {
 function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload): AgentRun | null {
   if (!run) return run;
   switch (event) {
+    // P14-ARCH-01：run.started 携带真实 Graph threadId（运行与 checkpoint 的关联键，仅展示）。
     case 'run.started':
-      return { ...run, id: Number(data.runId ?? run.id) };
+      return {
+        ...run,
+        id: Number(data.runId ?? run.id),
+        threadId: data.threadId == null ? (run.threadId ?? null) : String(data.threadId),
+      };
     case 'config.resolved': {
       const config: AgentConfigResolved = {
         agentId: data.agentId != null ? Number(data.agentId) : null,
@@ -295,6 +318,19 @@ function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload
     }
     case 'step.started':
       return patchStep(run, Number(data.stepId), { status: 'RUNNING' });
+    /**
+     * P14-ARCH-01：Worker 统一循环阶段（thinking/acting/verified/verify_failed）。
+     * 只反映真实阶段与有界尝试次数；attempt>1 表示带真实诊断的重试，绝不冒充成功。
+     */
+    case 'worker.thinking':
+      return patchStep(run, Number(data.stepId), {
+        worker: {
+          role: String(data.role ?? ''),
+          phase: String(data.phase ?? ''),
+          attemptId: data.attemptId == null ? null : String(data.attemptId),
+          attempt: Number(data.attempt ?? 1),
+        },
+      });
     // P14-B：多候选选优摘要（在 step.sql_ready 之前，仅 MULTI 路由推送）。
     case 'step.sql_candidates_evaluated':
       return patchStep(run, Number(data.stepId), { candidateSummary: toCandidateSummary(data) });
@@ -346,12 +382,20 @@ function applyEvent(run: AgentRun | null, event: string, data: AgentEventPayload
       return patchStep(run, Number(data.stepId), {
         reportId: Number(data.reportId ?? 0) || null,
       });
+    // P14-E：工具参数修复的瞬时提示。修复本身不代表调用成功，最终状态仍由 tool.result 决定。
+    case 'tool.repair':
+      return patchStep(run, Number(data.stepId), {
+        repair: {
+          attempt: Number(data.attempt ?? 0),
+          diagnostic: String(data.diagnostic ?? ''),
+        },
+      });
     // P14-A：显式工具单次执行的受限摘要（与步骤详情保持一致，不伪造 SQL）。
     case 'tool.result': {
       const stepId = Number(data.stepId);
       const status = String(data.status ?? '');
       const summary = String(data.summary ?? '');
-      const patch: Partial<AgentStep> = { resultSummary: summary };
+      const patch: Partial<AgentStep> = { resultSummary: summary, repair: null };
       if (status === 'SUCCEEDED') {
         patch.status = 'SUCCEEDED';
       } else if (status === 'FAILED') {
@@ -501,7 +545,8 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     try {
       const latest = await fetchLatestAgentRun(conversationId);
       if (seqRef.current !== seq) return;
-      setRun(latest == null ? null : mergeCandidateSummaries(adoptRun(latest), candidateSummariesRef.current));
+      const detail = latest == null ? null : mergeCandidateSummaries(adoptRun(latest), candidateSummariesRef.current);
+      setRun((current) => (detail == null ? null : mergeRuntimeState(detail, current)));
       setError(null);
     } catch (loadError) {
       if (seqRef.current !== seq) return;
@@ -530,7 +575,11 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     if (runId != null && seqRef.current === seq) {
       try {
         const detail = await fetchAgentRun(runId);
-        if (seqRef.current === seq) setRun(mergeCandidateSummaries(adoptRun(detail), candidateSummariesRef.current));
+        if (seqRef.current === seq) {
+          setRun((current) =>
+            mergeRuntimeState(mergeCandidateSummaries(adoptRun(detail), candidateSummariesRef.current), current),
+          );
+        }
       } catch (loadError) {
         if (seqRef.current === seq) setError(describeError(loadError));
       }
@@ -637,7 +686,9 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
       try {
         await rejectAgentStep(run.id, step.id);
         const detail = await fetchAgentRun(run.id);
-        setRun(mergeCandidateSummaries(adoptRun(detail), candidateSummariesRef.current));
+        setRun((current) =>
+          mergeRuntimeState(mergeCandidateSummaries(adoptRun(detail), candidateSummariesRef.current), current),
+        );
         settledRef.current?.();
       } catch (actionError) {
         setError(describeError(actionError));
@@ -699,7 +750,9 @@ export function useAgentRun({ conversationId, connectionId, onSettled }: AgentRu
     try {
       await cancelAgentRun(run.id);
       const detail = await fetchAgentRun(run.id);
-      setRun(mergeCandidateSummaries(adoptRun(detail), candidateSummariesRef.current));
+      setRun((current) =>
+        mergeRuntimeState(mergeCandidateSummaries(adoptRun(detail), candidateSummariesRef.current), current),
+      );
       settledRef.current?.();
     } catch (actionError) {
       setError(describeError(actionError));

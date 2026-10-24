@@ -11,6 +11,7 @@ const ALL_PAGE_KEYS: WorkspacePageKey[] = [
   'knowledge',
   'studio',
   'skills',
+  'mcp',
   'workspace',
   'memory',
   'report',

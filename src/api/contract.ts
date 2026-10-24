@@ -378,6 +378,24 @@ export interface AgentStep {
   analysisRunId: number | null;
   /** P14-C：REPORT_ASSISTANT 步骤成功后绑定的真实报告 ID（详情接口返回，刷新可恢复）。 */
   reportId: number | null;
+  /** P14-E：工具参数修复的瞬时提示（仅事件驱动，不代表调用成功）。 */
+  repair?: { attempt: number; diagnostic: string } | null;
+  /**
+   * P14-ARCH-01：Worker 统一循环进度（SSE worker.thinking，UI 运行时态）。
+   * phase 为 thinking/acting/verified/verify_failed，attempt 为有界重试次数。
+   */
+  worker?: WorkerProgress | null;
+}
+
+/**
+ * P14-ARCH-01：Worker 阶段进度（Thinking/Review/Act/Verify）。
+ * 只反映真实阶段与尝试次数；没有模型推理流时不会产生"思考内容"，只显示阶段。
+ */
+export interface WorkerProgress {
+  role: string;
+  phase: 'thinking' | 'acting' | 'verified' | 'verify_failed' | string;
+  attemptId: string | null;
+  attempt: number;
 }
 
 export interface AgentRun {
@@ -407,6 +425,11 @@ export interface AgentRun {
   configResolved?: AgentConfigResolved | null;
   /** P14-D：计划级审核状态（服务端权威，刷新后据此恢复审核卡片）。 */
   planReview?: PlanReviewView | null;
+  /**
+   * P14-ARCH-01：真实六 Agent Graph 的 threadId（runId↔threadId 归属映射）。
+   * 仅用于展示与日志关联，前端不得凭 threadId 绕过服务端身份验证或自行恢复运行。
+   */
+  threadId?: string | null;
 }
 
 /**
@@ -558,6 +581,44 @@ export interface McpTool {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+}
+
+/** P14-E：工具来源分类。Skill 只做提示注入，不进入工具执行。 */
+export type ToolKind = 'builtin' | 'mcp' | 'skill';
+
+/** P14-E：`GET /api/v1/tools/discovery` 的目录条目（仅当前用户可见）。 */
+export interface DiscoveredTool {
+  kind: ToolKind;
+  name: string;
+  displayName: string;
+  description: string;
+  inputSchema: Record<string, unknown> | null;
+  readOnly: boolean;
+  /** `call_tool` = 可单次工具调用；`inject_prompt` = Skill 提示注入，不能当工具执行。 */
+  invocationMode: 'call_tool' | 'inject_prompt';
+  source: 'BUILTIN' | 'MCP' | 'SKILL';
+  serverId: number | null;
+  skillId: number | null;
+}
+
+/** P14-E：用户级 MCP 服务配置。`status` 是持久意图，`connected` 是真实运行时事实。 */
+export interface McpServerView {
+  id: number;
+  name: string;
+  transportType: 'STDIO' | 'SSE';
+  endpoint: string;
+  status: string;
+  connected: boolean;
+  toolCount: number;
+  error: string | null;
+}
+
+export interface McpServerInput {
+  name: string;
+  transportType: 'STDIO' | 'SSE';
+  endpoint: string;
+  /** 仅非敏感环境键值；含 secret/token 的键会被后端拒绝。 */
+  env?: Record<string, string>;
 }
 
 /** P6：工作流 DAG。 */

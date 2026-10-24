@@ -8,6 +8,7 @@ import {
   Database,
   History as HistoryIcon,
   LayoutDashboard,
+  Plug,
   Settings,
   ShieldCheck,
   TerminalSquare,
@@ -22,6 +23,7 @@ import { SqlConsolePage } from '../pages/SqlConsolePage';
 import { KnowledgePage } from '../pages/KnowledgePage';
 import { StudioPage } from '../pages/StudioPage';
 import { SkillsPage } from '../pages/SkillsPage';
+import { McpServersPage } from '../pages/McpServersPage';
 import { WorkspacePage } from '../pages/WorkspacePage';
 import { MemoryPage } from '../pages/MemoryPage';
 import { ReportPage } from '../pages/ReportPage';
@@ -114,6 +116,13 @@ export const workspaceRoutes: WorkspaceRoute[] = [
     description: '可复用任务指引',
     icon: BookMarked,
     render: () => <SkillsPage />,
+  },
+  {
+    key: 'mcp',
+    label: 'MCP 服务',
+    description: '用户级连接与工具发现',
+    icon: Plug,
+    render: () => <McpServersPage />,
   },
   {
     key: 'workspace',

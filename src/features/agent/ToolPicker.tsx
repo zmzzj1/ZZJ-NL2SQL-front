@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Wrench, X } from 'lucide-react';
-import { fetchTools } from '../../api/tool';
-import type { ToolDescriptor } from '../../api/contract';
+import { fetchToolDiscovery } from '../../api/tool';
+import type { DiscoveredTool, ToolKind } from '../../api/contract';
+import { MCP_CATALOG_CHANGED_EVENT } from './toolCatalog';
 
 /** 当前选中的工具与已填写参数。 */
 export interface ToolSelection {
@@ -26,13 +27,23 @@ interface SchemaProperty {
   description?: string;
 }
 
-function propertiesOf(schema: Record<string, unknown>): Record<string, SchemaProperty> {
+const GROUP_LABEL: Record<ToolKind, string> = {
+  builtin: '内置工具',
+  mcp: 'MCP 工具',
+  skill: 'Skill（提示注入）',
+};
+
+const GROUP_ORDER: ToolKind[] = ['builtin', 'mcp', 'skill'];
+
+function propertiesOf(schema: Record<string, unknown> | null): Record<string, SchemaProperty> {
+  if (!schema) return {};
   const properties = schema.properties;
   if (!properties || typeof properties !== 'object') return {};
   return properties as Record<string, SchemaProperty>;
 }
 
-function requiredOf(schema: Record<string, unknown>): string[] {
+function requiredOf(schema: Record<string, unknown> | null): string[] {
+  if (!schema) return [];
   const required = schema.required;
   if (!Array.isArray(required)) return [];
   return required.filter((item): item is string => typeof item === 'string');
@@ -54,11 +65,15 @@ function coerce(value: string, type: string | undefined): unknown {
 }
 
 /**
- * P14-A：Agent 输入框的 `/` 工具选择。候选来自服务端 `GET /api/v1/tools` 目录，
- * 仅在用户点击发送后才把 toolInvocation 提交给后端；后端仍是最终验证方。
+ * P14-A/P14-E：Agent 输入框的 `/` 工具选择。候选来自用户级统一目录
+ * `GET /api/v1/tools/discovery`，按内置 / MCP / Skill 分组。
+ *
+ * <p>只有 `call_tool` 条目可被选为单次工具调用；Skill 是提示注入
+ * （`inject_prompt`），由既有 Skill 渲染链路消费，绝不伪装成 MCP `tools/call`。
+ * 参数表单来自服务端返回的真实 `inputSchema`，后端仍是最终校验方。</p>
  */
 export function ToolPicker({ disabled = false, onChange }: ToolPickerProps) {
-  const [tools, setTools] = useState<ToolDescriptor[]>([]);
+  const [tools, setTools] = useState<DiscoveredTool[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -72,9 +87,9 @@ export function ToolPicker({ disabled = false, onChange }: ToolPickerProps) {
 
   useEffect(() => {
     let active = true;
-    void (async () => {
+    const load = async () => {
       try {
-        const catalog = await fetchTools();
+        const catalog = await fetchToolDiscovery();
         if (!active) return;
         setTools(catalog);
         setLoadError(null);
@@ -84,13 +99,30 @@ export function ToolPicker({ disabled = false, onChange }: ToolPickerProps) {
       } finally {
         if (active) setLoading(false);
       }
-    })();
+    };
+    void load();
+    // MCP 连接/断开/删除后重新拉取真实目录，不让已断开的工具继续留在候选里。
+    const onCatalogChanged = () => {
+      void load();
+    };
+    window.addEventListener(MCP_CATALOG_CHANGED_EVENT, onCatalogChanged);
     return () => {
       active = false;
+      window.removeEventListener(MCP_CATALOG_CHANGED_EVENT, onCatalogChanged);
     };
   }, []);
 
-  const selected = useMemo(() => tools.find((tool) => tool.name === toolName) ?? null, [tools, toolName]);
+  const selectable = useMemo(() => tools.filter((tool) => tool.invocationMode === 'call_tool'), [tools]);
+
+  const selected = useMemo(() => selectable.find((tool) => tool.name === toolName) ?? null, [selectable, toolName]);
+
+  // 选中项在目录刷新后消失（例如 MCP 已断开）：立即清空，避免提交已失效的工具。
+  useEffect(() => {
+    if (toolName !== null && selected === null && !loading) {
+      setToolName(null);
+      setValues({});
+    }
+  }, [loading, selected, toolName]);
 
   const required = useMemo(() => (selected ? requiredOf(selected.inputSchema) : []), [selected]);
 
@@ -118,15 +150,12 @@ export function ToolPicker({ disabled = false, onChange }: ToolPickerProps) {
     onChangeRef.current({ selection: { toolName: selected.name, args }, validationError });
   }, [selected, values, validationError]);
 
-  const pick = (name: string) => {
-    const tool = tools.find((item) => item.name === name);
-    setToolName(name);
+  const pick = (tool: DiscoveredTool) => {
+    setToolName(tool.name);
     setOpen(false);
     const next: Record<string, string> = {};
-    if (tool) {
-      for (const [key, property] of Object.entries(propertiesOf(tool.inputSchema))) {
-        next[key] = initialValue(property.type);
-      }
+    for (const [key, property] of Object.entries(propertiesOf(tool.inputSchema))) {
+      next[key] = initialValue(property.type);
     }
     setValues(next);
   };
@@ -165,6 +194,7 @@ export function ToolPicker({ disabled = false, onChange }: ToolPickerProps) {
         </button>
         {selected ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-accent/40 bg-accent-soft px-2 py-0.5 text-[11px] font-semibold text-accent">
+            {selected.kind === 'mcp' ? <span className="text-[10px] uppercase">MCP</span> : null}
             {selected.name}
             <button type="button" onClick={clear} aria-label="取消工具选择" className="ml-0.5">
               <X className="h-3 w-3" aria-hidden="true" />
@@ -176,25 +206,44 @@ export function ToolPicker({ disabled = false, onChange }: ToolPickerProps) {
       </div>
 
       {open ? (
-        <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-line bg-panel-muted p-2">
-          {tools.length === 0 ? (
-            <li className="text-[11px] text-ink-muted">当前没有可用工具</li>
+        <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-line bg-panel-muted p-2">
+          {selectable.length === 0 ? (
+            <p className="text-[11px] text-ink-muted">当前没有可用工具</p>
           ) : (
-            tools.map((tool) => (
-              <li key={tool.name}>
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px] hover:bg-accent-soft"
-                  onClick={() => pick(tool.name)}
-                  disabled={disabled}
-                >
-                  <span className="font-mono text-ink">{tool.name}</span>
-                  <span className="truncate text-ink-muted">{tool.description}</span>
-                </button>
-              </li>
-            ))
+            GROUP_ORDER.map((kind) => {
+              const group = tools.filter((tool) => tool.kind === kind);
+              if (group.length === 0) return null;
+              return (
+                <section key={kind} aria-label={GROUP_LABEL[kind]}>
+                  <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+                    {GROUP_LABEL[kind]}
+                  </p>
+                  <ul className="space-y-1">
+                    {group.map((tool) => {
+                      const runnable = tool.invocationMode === 'call_tool';
+                      return (
+                        <li key={`${tool.kind}-${tool.serverId ?? 'local'}-${tool.name}`}>
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-[11px] hover:bg-accent-soft disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:bg-transparent"
+                            onClick={() => pick(tool)}
+                            disabled={disabled || !runnable}
+                            title={runnable ? tool.description : 'Skill 只做提示注入，不作为单次工具调用执行'}
+                          >
+                            <span className="font-mono text-ink">{tool.name}</span>
+                            <span className="truncate text-ink-muted">
+                              {runnable ? tool.description : '提示注入（不执行工具）'}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
+              );
+            })
           )}
-        </ul>
+        </div>
       ) : null}
 
       {selected ? (

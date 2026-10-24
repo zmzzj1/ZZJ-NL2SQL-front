@@ -48,6 +48,37 @@ function run(overrides: Partial<AgentRun> = {}): AgentRun {
   };
 }
 
+describe('AgentTimeline（P14-ARCH-01 Graph 与 Worker）', () => {
+  it('展示真实 Graph 线程摘要与 Worker 阶段（不显示思考内容）', () => {
+    render(
+      <AgentTimeline
+        run={run({
+          threadId: '1f2c9b7e-4d55-4a2f-9f1a-0b7c3d5e6f70',
+          steps: [
+            {
+              ...run().steps[0],
+              status: 'RUNNING',
+              worker: { role: 'DATA_SCIENTIST', phase: 'acting', attemptId: 'attempt-1', attempt: 2 },
+            },
+          ],
+        })}
+        loading={false}
+        streaming={false}
+        error={null}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onCancel={vi.fn()}
+        onReload={vi.fn()}
+      />,
+    );
+
+    // threadId 只截断展示，不作为任何操作入口。
+    expect(screen.getByText(/Graph 线程 1f2c9b7e…/)).toBeInTheDocument();
+    // Worker 阶段与有界尝试次数真实可见；不存在任何"思考内容"文本。
+    expect(screen.getByText('Act（第 2 次尝试）')).toBeInTheDocument();
+  });
+});
+
 describe('AgentTimeline', () => {
   it('待确认步骤展示 SQL 版本与确认按钮，并回传该步骤', async () => {
     const onApprove = vi.fn();
@@ -566,5 +597,42 @@ describe('AgentTimeline', () => {
     );
 
     expect(screen.queryByRole('button', { name: /批准并执行计划/ })).not.toBeInTheDocument();
+  });
+
+  it('工具参数修复只展示有界提示，不把「已生成参数」当成功', () => {
+    const base = run().steps[0];
+    render(
+      <AgentTimeline
+        run={run({
+          status: 'RUNNING',
+          steps: [
+            {
+              ...base,
+              id: 21,
+              sequence: 1,
+              objective: '调用知识库工具检索口径',
+              status: 'RUNNING',
+              sql: null,
+              sqlVersion: 0,
+              agentRole: 'TOOL_ASSISTANT',
+              repair: { attempt: 1, diagnostic: '缺少必填参数 query' },
+            },
+          ],
+        })}
+        loading={false}
+        streaming={true}
+        error={null}
+        onApprove={vi.fn()}
+        onReject={vi.fn()}
+        onDecidePlan={vi.fn()}
+        onCancel={vi.fn()}
+        onReload={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/工具参数修复中（第 1 次）/)).toBeInTheDocument();
+    expect(screen.getByText(/缺少必填参数 query/)).toBeInTheDocument();
+    // 尚无真实工具结果：不得出现成功摘要。
+    expect(screen.queryByText('SUCCEEDED')).not.toBeInTheDocument();
   });
 });

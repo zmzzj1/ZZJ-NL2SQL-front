@@ -1,0 +1,13 @@
+.git
+.idea
+.trae
+.workbuddy
+.codebuddy
+node_modules
+dist
+coverage
+docs
+*.log
+.env
+.env.*
+!.env.example
